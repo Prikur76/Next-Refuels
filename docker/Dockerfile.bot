@@ -1,0 +1,11 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY pyproject.toml /app/
+RUN python -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); req='\\n'.join(d['project']['dependencies']); open('/tmp/req.txt','w',encoding='utf-8').write(req+'\\n')" \
+    && pip install --no-cache-dir -r /tmp/req.txt
+
+COPY . .
+
+CMD ["python", "manage.py", "runbot"]

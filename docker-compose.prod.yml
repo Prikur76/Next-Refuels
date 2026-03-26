@@ -1,0 +1,196 @@
+services:
+
+  frontend:
+    image: node:20-alpine
+    container_name: next_refuels_frontend_prod
+    working_dir: /app/frontend
+    environment:
+      NEXT_PUBLIC_API_URL: ""
+      # Для SSR роутов Next.js (например, /api/reports/export/[type])
+      # нужно явно ходить в Django по внутреннему адресу контейнера.
+      NEXT_INTERNAL_API_URL: "http://web:8000"
+      # В prod фронтенд и Django admin на одном хосте, так что можно
+      # оставить значение пустым (используется относительный `/admin/`).
+      NEXT_PUBLIC_DJANGO_ADMIN_URL: ""
+    command: >
+      sh -c "
+      npm install &&
+      npm run build &&
+      (
+        npm run start &
+        pid=$$!;
+        node /app/scripts/next-warmup.mjs --base http://localhost:4173 --paths / /login /fuel/add /fuel/reports /analytics || true;
+        wait $$pid
+      )
+      "
+    restart: unless-stopped
+    volumes:
+      - .:/app
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    container_name: next_refuels_web
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: next_refuels.settings.prod
+      # IMPORTANT: в базовых настройках DEBUG читается при импорте.
+      # Чтобы прод не наследовал dev-значения из .env, явно выставляем.
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${DOMAIN}
+      CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
+      FRONTEND_BASE_URL: https://${DOMAIN}
+      SECURE_SSL_REDIRECT: "True"
+      SESSION_COOKIE_SECURE: "True"
+      CSRF_COOKIE_SECURE: "True"
+    command: >
+      gunicorn next_refuels.wsgi:application
+      --bind 0.0.0.0:8000
+      --workers 4
+      --log-level info
+      --access-logfile /dev/null
+    volumes:
+      - static_volume:/app/static
+      - media_volume:/app/media
+      - ./logs:/app/logs
+      - ./local_secrets:/app/local_secrets:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: next_refuels_nginx
+    environment:
+      DOMAIN: ${DOMAIN}
+    # reload каждые 1h: после certbot renew nginx нужно подхватить новые файлы
+    # в /etc/letsencrypt (certbot в другом контейнере, без deploy-hook).
+    command: >
+      /bin/sh -c "
+      while :; do
+        sleep 1h & wait $$!;
+        nginx -s reload || true;
+      done &
+      nginx -g 'daemon off;'
+      "
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - static_volume:/static
+      - media_volume:/media
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./certbot/www:/var/www/certbot
+      - /etc/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - frontend
+      - web
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot
+    container_name: next_refuels_certbot
+    env_file: .env
+    # ACME HTTP-01: challenge отдаёт nginx; renew после старта nginx.
+    depends_on:
+      - nginx
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      trap exit TERM;
+      while :; do
+        /bin/sh /app/scripts/check-cert-expiry.sh;
+        certbot renew --webroot -w /var/www/certbot --quiet --non-interactive;
+        /bin/sh /app/scripts/check-cert-expiry.sh;
+        sleep 12h & wait $$!;
+      done
+      "
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/bin/sh /app/scripts/check-cert-expiry.sh --healthcheck"
+        ]
+      interval: 30m
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - /etc/letsencrypt:/etc/letsencrypt
+      - ./scripts/check-cert-expiry.sh:/app/scripts/check-cert-expiry.sh:ro
+
+  redis:
+    image: redis:7-alpine
+    container_name: next_refuels_redis_prod
+    restart: unless-stopped
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+  bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.bot
+    container_name: telegram_bot_prod
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: next_refuels.settings.prod
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${DOMAIN}
+      CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
+      FRONTEND_BASE_URL: https://${DOMAIN}
+    depends_on:
+      web:
+        condition: service_healthy
+    command: python manage.py runbot
+    restart: unless-stopped
+    user: "1000:1000"
+    volumes:
+      - ./logs:/app/logs
+      - ./local_secrets:/app/local_secrets:ro
+    
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    container_name: scheduler_prod
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: next_refuels.settings.prod
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${DOMAIN}
+      CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
+      FRONTEND_BASE_URL: https://${DOMAIN}
+    depends_on:
+      web:
+        condition: service_healthy
+    command: >
+      /bin/sh -c "
+      echo 'Scheduler starting...';
+      while true; do
+        echo '[Scheduler] Running sync...';
+        python manage.py sync_cars_with_element || echo '[ERROR] Command failed but continuing...';
+        echo '[Scheduler] Sleeping for 60 minutes...';
+        sleep 3600;
+      done
+      "
+    restart: unless-stopped
+    user: "1000:1000"
+    volumes:
+      - ./logs:/app/logs
+      - ./local_secrets:/app/local_secrets:ro
+    
+volumes:
+  static_volume:
+  media_volume:
+  redis_data:
+  local_secrets:
+  logs:

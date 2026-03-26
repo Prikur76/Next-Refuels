@@ -1,0 +1,45 @@
+{% load i18n %}
+{% load static %}
+<script type="text/javascript">
+(function($) {
+    $(document).ready(function() {
+        // Показываем количество выбранных элементов
+        function updateSelectedCount() {
+            var selectedCount = $('input.action-select:checked').length;
+            if (selectedCount > 0) {
+                $('#selected-count').remove();
+                $('.actions').prepend(
+                    '<span id="selected-count" style="margin-right: 10px; padding: 5px 10px; background: #007cba; color: white; border-radius: 3px; font-weight: bold;">' +
+                    'Выбрано: ' + selectedCount + '</span>'
+                );
+            } else {
+                $('#selected-count').remove();
+            }
+        }
+        
+        // Обновляем счетчик при изменении выбора
+        $('input.action-select').change(updateSelectedCount);
+        updateSelectedCount();
+        
+        // Автоматически применяем иконки к actions после загрузки
+        setTimeout(function() {
+            $('select[name="action"] option').each(function() {
+                var text = $(this).text();
+                if (text.includes('CSV')) {
+                    $(this).text('📄 ' + text);
+                } else if (text.includes('Excel')) {
+                    $(this).text('📊 ' + text);
+                } else if (text.includes('Архив')) {
+                    $(this).text('📦 ' + text);
+                } else if (text.includes('Восстановить')) {
+                    $(this).text('🔄 ' + text);
+                } else if (text.includes('дубликат')) {
+                    $(this).text('🔍 ' + text);
+                } else if (text.includes('GSheets')) {
+                    $(this).text('📊 ' + text);
+                }
+            });
+        }, 100);        
+    });
+})(django.jQuery);
+</script>

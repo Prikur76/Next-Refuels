@@ -1,0 +1,75 @@
+[project]
+name = "next-refuels"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.13.2",
+    "django>=5.2.8",
+    "django-cors-headers>=4.6.0",
+    "django-ninja>=1.4.5",
+    "editorconfig-checker>=3.4.1",
+    "environs[django]>=14.5.0",
+    "openpyxl>=3.1.5",
+    "polars>=1.35.2",
+    "pydantic-settings>=2.11.0",
+    "python-telegram-bot>=22.5",
+    "pytz>=2025.2",
+    "pyyaml>=6.0.3",
+    "ruff>=0.14.4",
+    "xlsxwriter>=3.2.9",
+    "gunicorn>=21.2.0",
+    "whitenoise>=6.7.0",
+    "uvicorn[standard]>=0.30.0",
+    "psycopg2-binary>=2.9.11",
+    "django-phonenumber-field[phonenumberslite]>=8.3.0",
+    "redis>=7.1.0",
+    "dj-database-url>=3.0.1",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+# Ограничиваем набор Python-пакетов, чтобы setuptools не пытался
+# "угадать" лишние top-level директории в flat-layout.
+include = ["core*", "next_refuels*"]
+exclude = [
+    "frontend*",
+    "docker*",
+    "logs*",
+    "media*",
+    "nginx*",
+    "static*",
+    "certbot*",
+    "local_secrets*",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 79
+indent-width = 4
+exclude = [
+    ".venv",
+    "venv",
+    "staticfiles",
+    "migrations",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

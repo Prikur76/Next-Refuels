@@ -1,0 +1,13 @@
+{% extends "web/base.html" %}
+
+{% block title %}Доступ ограничен{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Доступ ограничен</h2>
+    <p>{{ message|default:"У вас нет прав для выполнения операции." }}</p>
+    <p>
+        <a href="/">Вернуться на главную</a>
+    </p>
+</div>
+{% endblock %}

@@ -1,0 +1,101 @@
+services:
+
+  # Фронт: http://localhost:5173 | Админка: http://localhost:8000/admin
+  frontend:
+    image: node:20-alpine
+    container_name: next_refuels_frontend_dev
+    working_dir: /app/frontend
+    environment:
+      # Пусто = API через Next-rewrites. Иначе: http://localhost:8000 (нужен CORS в .env.dev)
+      NEXT_PUBLIC_API_URL: ""
+      NEXT_PUBLIC_DJANGO_ADMIN_URL: "http://localhost:8000/admin/"
+      NEXT_INTERNAL_API_URL: "http://web:8000"
+      # Сборка в Docker на Windows: без poll Next часто не видит правки в bind-mount.
+      WATCHPACK_POLLING: "1000"
+    command: >
+      sh -c "
+      npm install &&
+      npm run build &&
+      (
+        npx next start -H 0.0.0.0 -p 5173 &
+        pid=$$!;
+        node /app/scripts/next-warmup.mjs --base http://localhost:5173 --paths / /login /fuel/add /fuel/reports /analytics || true;
+        wait $$pid
+      )
+      "
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: next_refuels_web_dev
+    env_file: .env.dev
+    command: >
+      gunicorn next_refuels.wsgi:application
+      --bind 0.0.0.0:8000
+      --workers 4
+      --log-level info
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - static_volume:/app/static
+      - media_volume:/app/media
+      - ./logs:/app/logs
+      - ./local_secrets:/app/local_secrets
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: telegram_bot_dev
+    env_file: .env.dev
+    depends_on:
+      web:
+        condition: service_healthy
+    command: python manage.py runbot
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - ./local_secrets:/app/local_secrets
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: scheduler_dev
+    env_file: .env.dev
+    depends_on:
+      web:
+        condition: service_healthy
+    command: >
+      /bin/sh -c "
+      echo 'Scheduler starting...';
+      while true; do
+        echo '[Scheduler] Running sync...';
+        python manage.py sync_cars_with_element;
+        echo '[Scheduler] Sleeping for 5 minutes...';
+        sleep 300;
+      done
+      "
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - ./local_secrets:/app/local_secrets
+
+volumes:
+  static_volume:
+  media_volume:
+  logs:
+  local_secrets:

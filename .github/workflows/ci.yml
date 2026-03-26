@@ -1,0 +1,71 @@
+# Непрерывная интеграция: backend (Django) и frontend (Next.js).
+# CD (деплой на сервер) настраивается отдельно: секреты в GitHub → Deploy keys / SSH.
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      # Без .env на раннере: SQLite из next_refuels.settings.dev (см. dev.py).
+      DEBUG: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Django tests
+        run: uv run python manage.py test --verbosity 1
+
+      # После приведения кода к ruff: раскомментируйте.
+      # - name: Ruff check
+      #   run: uv run ruff check manage.py core next_refuels scripts
+      # - name: Ruff format (check)
+      #   run: uv run ruff format --check manage.py core next_refuels scripts
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint (Next.js)
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build

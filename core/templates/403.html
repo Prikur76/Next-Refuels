@@ -1,0 +1,18 @@
+{% extends "web/base.html" %}
+{% load static %}
+{% block title %}Доступ запрещён{% endblock %}
+{% block content %}
+<div class="text-center mt-5">
+    <h1 class="display-3 fw-bold text-danger">
+        <i class="bi bi-shield-lock-fill"></i> 🚫 403
+    </h1>
+    <h3 class="mb-4">Доступ запрещён</h3>
+    <p class="lead text-muted">У вас нет прав для доступа к этой странице.</p>
+
+    {% if user.is_authenticated %}
+        <a href="/" class="btn btn-primary mt-3">🏠 На главную</a>
+    {% else %}
+        <a href="/accounts/login/" class="btn btn-primary mt-3">🔑 Войти</a>
+    {% endif %}
+</div>
+{% endblock %}

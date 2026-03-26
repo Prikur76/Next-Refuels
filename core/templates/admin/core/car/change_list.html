@@ -1,0 +1,210 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+.quick-actions {
+    margin-top: 20px;
+    padding: 15px;
+    background: var(--primary-bg);
+    border-radius: 5px;
+    border: 1px solid var(--border-color);
+}
+.stats-stub {
+    background: var(--primary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+}
+.stats-stub-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.stats-stub-icon {
+    font-size: 24px;
+    color: var(--body-quiet-color);
+}
+.stats-stub-text h3 {
+    color: var(--body-fg);
+    margin: 0;
+    font-size: 14px;
+    font-weight: bold;
+}
+.stats-stub-text p {
+    color: var(--body-quiet-color);
+    margin: 0;
+    font-size: 12px;
+}
+.stats-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--primary);
+    color: var(--button-fg);
+    padding: 6px 12px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+    border: 1px solid var(--primary);
+    transition: all 0.15s;
+}
+.stats-link:hover {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+    color: var(--button-fg);
+}
+.stats-link:active {
+    background: var(--primary-darker);
+    border-color: var(--primary-darker);
+}
+
+/* Адаптация для темной темы */
+@media (prefers-color-scheme: dark) {
+    .stats-stub, .quick-actions {
+        background: var(--darkened-bg);
+    }
+}
+
+/* Стили для статистики */
+.stats-container {
+    margin: 15px 0;
+    padding: 15px;
+    background: var(--primary-bg);
+    border-radius: 5px;
+    border-left: 4px solid var(--primary);
+    border: 1px solid var(--border-color);
+}
+.stats-grid {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+.stats-column {
+    flex: 1;
+    min-width: 200px;
+    margin: 5px 0;
+}
+.stats-column strong {
+    color: var(--body-fg);
+    margin-bottom: 8px;
+    display: block;
+}
+.stats-column ul {
+    margin: 0;
+    padding-left: 15px;
+    color: var(--body-quiet-color);
+}
+.stats-column li {
+    margin-bottom: 4px;
+}
+
+/* Стили для пагинации */
+.pagination-container {
+    margin: 20px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.pagination-info {
+    color: var(--body-quiet-color);
+    font-size: 13px;
+}
+.pagination {
+    display: flex;
+    gap: 5px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.pagination .page-link {
+    display: block;
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    text-decoration: none;
+    color: var(--link-fg);
+    background: var(--primary-bg);
+    font-size: 13px;
+    transition: all 0.15s;
+}
+.pagination .page-link:hover {
+    background: var(--primary);
+    color: var(--button-fg);
+    border-color: var(--primary);
+}
+.pagination .current {
+    background: var(--primary);
+    color: var(--button-fg);
+    border-color: var(--primary);
+}
+.pagination .disabled {
+    color: var(--body-lighter-color);
+    cursor: not-allowed;
+}
+.pagination .disabled:hover {
+    background: var(--primary-bg);
+    color: var(--body-lighter-color);
+    border-color: var(--border-color);
+}
+</style>
+{% endblock %}
+
+{% block content_title %}
+    <h1>🚗 Управление автомобилями</h1>
+{% endblock %}
+
+{% block object-tools %}
+    <div class="object-tools">
+        {% block object-tools-items %}
+           {{ block.super }}
+        {% endblock %}
+    </div>
+{% endblock %}
+
+{% block content %}
+<!-- Компактная заглушка для статистики -->
+<div class="module" style="margin-bottom: 20px;">
+    <div class="stats-stub">
+        <div class="stats-stub-content">
+            <div class="stats-stub-icon">📊</div>
+            <div class="stats-stub-text">
+                <h3>Статистика автомобилей</h3>
+                <p>Детальная аналитика на отдельной странице</p>
+            </div>
+        </div>
+        <a href="/admin/core/car/cars-statistics/" class="stats-link">
+            📈 Перейти
+        </a>
+    </div>
+    
+    <!-- Быстрые действия -->
+    <div class="quick-actions">
+        <h5 style="color: var(--body-fg); margin-bottom: 10px;">⚡ Быстрые действия</h5>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <a href="archive-old-cars/" class="btn btn-info btn-sm">📦 Архив старых авто</a>
+            <a href="find-duplicates/" class="btn btn-warning btn-sm">🔍 Найти дубликаты</a>
+            <a href="cars-statistics/" class="btn btn-success btn-sm">📊 Детальная статистика</a>
+            <a href="export-all-cars/" class="btn btn-primary btn-sm">📥 Экспорт всех авто</a>
+        </div>
+    </div>
+</div>
+<!-- Стандартный список записей -->
+{{ block.super }}
+{% endblock %}
+
+{% block pagination %}
+<!-- Стандартная пагинация Django Admin снизу -->
+{{ block.super }}
+{% endblock %}

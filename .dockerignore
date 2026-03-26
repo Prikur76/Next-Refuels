@@ -1,0 +1,64 @@
+# Локальные настройки и секреты
+.env
+.env.*
+!.env.example
+*.env.local
+*.env
+.envrc
+
+# Ключи и типовые секреты (не в контексте сборки образа)
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+**/google-credentials.json
+**/service-account*.json
+local_secrets/
+
+# Виртуальное окружение
+venv/
+.venv/
+env/
+envs/
+
+# Логи и данные
+logs/
+data/
+*.log
+deploy.log
+
+# Статика и медиа (collectstatic выполняется в контейнере)
+staticfiles/
+media/
+
+# Git / CI
+.git
+.gitignore
+.github/
+
+# Документация — не нужна в образе приложения
+docs/
+
+# PyCharm / IDE
+.idea/
+*.swp
+*~
+__pycache__/
+*.pyc
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node.js (если используется)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
