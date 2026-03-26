@@ -17,12 +17,13 @@ permissions:
 
 env:
   # Опт-ин на Node 24 для JS-based GitHub Actions.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   backend:
     runs-on: ubuntu-latest
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       # Без .env на раннере: SQLite из next_refuels.settings.dev (см. dev.py).
       DEBUG: "1"
       # Явно фиксируем sqlite в CI, чтобы не дергать внешний Postgres из .env.
@@ -56,6 +57,8 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     defaults:
       run:
         working-directory: frontend

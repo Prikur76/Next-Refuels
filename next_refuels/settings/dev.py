@@ -42,18 +42,23 @@ ALLOWED_HOSTS = env.list(
 # Fallback to sqlite for fully local no-DB setup.
 DATABASE_URL = env.str("DATABASE_URL", "")
 if DATABASE_URL:
+    db_parse_options: dict[str, Any] = {
+        "conn_max_age": env.int("DB_CONN_TIMEOUT", 30),
+    }
+    if DATABASE_URL.startswith(("postgres://", "postgresql://")):
+        db_parse_options["ssl_require"] = env.bool("DB_SSL_REQUIRE", False)
+
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
-            conn_max_age=env.int("DB_CONN_TIMEOUT", 30),
-            ssl_require=env.bool("DB_SSL_REQUIRE", False),
+            **db_parse_options,
         )
     }
 else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "NAME": str(BASE_DIR / "db.sqlite3"),
         }
     }
 
