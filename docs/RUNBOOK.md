@@ -205,6 +205,30 @@
   - `CREATE TABLE IF NOT EXISTS public.__perm_test(id int);`
   - `DROP TABLE IF EXISTS public.__perm_test;`
 
+### 6.5 `PermissionError: /app/logs/errors.log` в web-контейнере
+
+Симптом:
+
+- `web` уходит в `Restarting` / `unhealthy`;
+- в логах `next_refuels_web` ошибка:
+  `PermissionError: [Errno 13] Permission denied: '/app/logs/errors.log'`.
+
+Причина:
+
+- `./logs` смонтирован как bind-mount (`./logs:/app/logs`);
+- директория на хосте принадлежит `root:root` и недоступна на запись
+  пользователю контейнера (`uid=1000`, `appuser`).
+
+Решение:
+
+- `cd /opt/next-refuels`
+- `mkdir -p logs local_secrets`
+- `sudo chown -R 1000:1000 logs local_secrets`
+- `sudo chmod -R u+rwX logs local_secrets`
+- `docker compose -f docker-compose.prod.yml up -d`
+- `docker compose -f docker-compose.prod.yml ps`
+- `docker compose -f docker-compose.prod.yml logs --tail=100 web`
+
 ## 7. Безопасное обслуживание
 
 - Перед изменениями в prod сначала прогонять local smoke-test.
@@ -249,13 +273,18 @@
   - проверить обязательные переменные (`DOMAIN`, `SECRET_KEY`,
     DB/Redis/Telegram и т.д.);
   - убедиться, что `.env` не попадает в git.
-5. Проверить базовый прод-старт вручную:
+5. Подготовить bind-mount директории с правами для контейнеров:
+  - `cd /opt/next-refuels`
+  - `mkdir -p logs local_secrets`
+  - `sudo chown -R 1000:1000 logs local_secrets`
+  - `sudo chmod -R u+rwX logs local_secrets`
+6. Проверить базовый прод-старт вручную:
   - `docker compose -f docker-compose.prod.yml up -d --build`;
   - `docker compose -f docker-compose.prod.yml ps`;
   - `https://<DOMAIN>/health/` возвращает OK.
-6. Настроить GitHub Secrets:
+7. Настроить GitHub Secrets:
   - `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_PORT`, `VPS_APP_PATH`.
-7. Запустить GitHub workflow `Deploy to VPS` вручную один раз
+8. Запустить GitHub workflow `Deploy to VPS` вручную один раз
    (`workflow_dispatch`) и проверить, что деплой проходит end-to-end.
 
 ### 9.2 Экспресс-верификация после каждого деплоя
@@ -304,6 +333,10 @@
 6. Создать `.env` на сервере:
   - `sudo -u deploy -H bash -lc 'cd /opt/next-refuels && cp .env.example .env'`
   - `sudo -u deploy -H bash -lc 'cd /opt/next-refuels && nano .env'`
+7. Подготовить bind-mount директории:
+  - `sudo -u deploy -H bash -lc 'cd /opt/next-refuels && mkdir -p logs local_secrets'`
+  - `sudo chown -R 1000:1000 /opt/next-refuels/logs /opt/next-refuels/local_secrets`
+  - `sudo chmod -R u+rwX /opt/next-refuels/logs /opt/next-refuels/local_secrets`
 
 ### 9.4 One-shot script для чистого Ubuntu
 

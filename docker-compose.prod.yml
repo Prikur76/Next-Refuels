@@ -38,7 +38,9 @@ services:
       # IMPORTANT: в базовых настройках DEBUG читается при импорте.
       # Чтобы прод не наследовал dev-значения из .env, явно выставляем.
       DEBUG: "False"
-      ALLOWED_HOSTS: ${DOMAIN}
+      # Нужны localhost/127.0.0.1/web для внутренних health-check запросов
+      # из контейнеров; внешний хост остается ${DOMAIN}.
+      ALLOWED_HOSTS: ${DOMAIN},localhost,127.0.0.1,web
       CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
       FRONTEND_BASE_URL: https://${DOMAIN}
       SECURE_SSL_REDIRECT: "True"
@@ -144,7 +146,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: next_refuels.settings.prod
       DEBUG: "False"
-      ALLOWED_HOSTS: ${DOMAIN}
+      ALLOWED_HOSTS: ${DOMAIN},localhost,127.0.0.1,web
       CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
       FRONTEND_BASE_URL: https://${DOMAIN}
     depends_on:
@@ -166,7 +168,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: next_refuels.settings.prod
       DEBUG: "False"
-      ALLOWED_HOSTS: ${DOMAIN}
+      ALLOWED_HOSTS: ${DOMAIN},localhost,127.0.0.1,web
       CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
       FRONTEND_BASE_URL: https://${DOMAIN}
     depends_on:
