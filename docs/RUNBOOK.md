@@ -16,6 +16,9 @@
 - Доступны файлы окружения:
   - локально: `.env.dev`;
   - прод: `.env`.
+  - шаблоны:
+    - `/.env.example` — расширенный dev/local шаблон;
+    - `/.env.prod.example` — минимальный production шаблон.
 - Для prod SSL:
   - домен указывает на сервер;
   - порты `80/443` открыты;
@@ -68,6 +71,27 @@
   - `http://localhost:5173/`
 
 ## 4. Production запуск
+
+Перед первым запуском:
+
+1. Создать `.env` из prod-шаблона:
+  - `cp .env.prod.example .env`
+2. Заполнить минимум:
+  - `SECRET_KEY`, `DOMAIN`, `LETSENCRYPT_EMAIL`;
+  - `DATABASE_URL` и `POSTGRES_*`;
+  - `TELEGRAM_BOT_TOKEN` (если включён сервис `bot`);
+  - `ELEMENT_API_*` (если используется sync с `1C:Элемент`).
+
+Минимальная матрица переменных:
+
+| Переменная/блок | Статус | Когда обязательна |
+|---|---|---|
+| `SECRET_KEY`, `DEBUG=False`, `DOMAIN`, `LETSENCRYPT_EMAIL` | обязательно | всегда в prod |
+| `DATABASE_URL`, `POSTGRES_*` | обязательно | всегда в prod |
+| `TELEGRAM_*` | условно | если запускается `bot` |
+| `ELEMENT_API_*` | условно | если используется `sync_cars_with_element` |
+| `SSO_*`, `MFA_POLICY_ENABLED` | опционально | только при включении SSO/MFA |
+| `EMAIL_*` | опционально | если нужны email-уведомления |
 
 ### 4.1 Старт/рестарт
 
