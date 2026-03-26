@@ -239,6 +239,8 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/.next/
+!frontend/src/lib/
+!frontend/src/lib/**
 *.tsbuildinfo
 
 # Database dump files
