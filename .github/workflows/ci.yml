@@ -15,21 +15,30 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Опт-ин на Node 24 для JS-based GitHub Actions.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   backend:
     runs-on: ubuntu-latest
     env:
       # Без .env на раннере: SQLite из next_refuels.settings.dev (см. dev.py).
       DEBUG: "1"
+      # В CI принудительно отключаем внешний Postgres для dev-настроек.
+      DATABASE_URL: ""
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -37,7 +46,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Django tests
-        run: uv run python manage.py test --verbosity 1
+        run: uv run python manage.py test --verbosity 1 --noinput
 
       # После приведения кода к ruff: раскомментируйте.
       # - name: Ruff check
@@ -52,7 +61,7 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
