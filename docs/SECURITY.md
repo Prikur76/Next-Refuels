@@ -106,6 +106,49 @@
 - `DEBUG` выставлен корректно, и
 - `ALLOWED_HOSTS` дополнен нужными host-именами.
 
+## SSH-безопасность для CI/CD (один VPS)
+
+Рекомендуемый минимум для деплоя из GitHub Actions:
+
+- отдельный системный пользователь для деплоя (`deploy`), не `root`;
+- вход по ключу, парольный вход отключен;
+- отдельный SSH-ключ только для CI/CD;
+- ограничение доступа по IP (если возможно);
+- минимальные права на сервере и в GitHub.
+
+### Рекомендуемая схема
+
+1. Создать пользователя `deploy` и добавить его в группу `docker`.
+2. Сгенерировать отдельный ключ для GitHub Actions (локально):
+   - `ssh-keygen -t ed25519 -f ./gha_deploy_ed25519 -C "gha-deploy"`
+3. Публичный ключ (`gha_deploy_ed25519.pub`) добавить на VPS в:
+   - `/home/deploy/.ssh/authorized_keys`
+4. Приватный ключ (`gha_deploy_ed25519`) добавить в GitHub Secret:
+   - `VPS_SSH_KEY`
+5. Убедиться, что деплой идет под `deploy`, а не под `root`.
+
+### Базовый hardening SSH (sshd_config)
+
+Проверьте настройки `/etc/ssh/sshd_config`:
+
+- `PermitRootLogin no`
+- `PasswordAuthentication no`
+- `PubkeyAuthentication yes`
+- `MaxAuthTries 3`
+- `AllowUsers deploy`
+
+После изменений:
+
+- `sudo sshd -t` (валидация);
+- `sudo systemctl reload sshd`.
+
+### Права и хранение секретов
+
+- `.env` хранить только на VPS, не в git;
+- доступ к каталогу проекта ограничить владельцем/группой;
+- приватный ключ в GitHub хранить только в `Actions secrets`;
+- включить защиту ветки `main/master` и обязательный успешный CI перед merge.
+
 ## Известные пробелы baseline (что стоит улучшить)
 
 - MFA по умолчанию отключен (`MFA_POLICY_ENABLED = False`).

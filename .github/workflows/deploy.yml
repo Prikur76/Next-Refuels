@@ -1,0 +1,98 @@
+name: Deploy to VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Git branch to deploy"
+        required: true
+        default: "main"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main, master]
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # Автодеплой только после успешного CI; вручную можно запустить всегда.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          envs: APP_DIR,DEPLOY_BRANCH
+          script: |
+            set -Eeuo pipefail
+
+            APP_DIR="${APP_DIR}"
+            DEPLOY_BRANCH="${DEPLOY_BRANCH}"
+            COMPOSE="docker compose -f docker-compose.prod.yml"
+
+            if [ -z "${APP_DIR}" ]; then
+              echo "APP_DIR is empty. Set VPS_APP_PATH in GitHub secrets."
+              exit 1
+            fi
+
+            if [ ! -d "${APP_DIR}/.git" ]; then
+              echo "Repository not found at ${APP_DIR}. Clone project first."
+              exit 1
+            fi
+
+            cd "${APP_DIR}"
+            echo "Deploying branch: ${DEPLOY_BRANCH}"
+
+            git fetch origin "${DEPLOY_BRANCH}"
+            git checkout "${DEPLOY_BRANCH}"
+            git pull --ff-only origin "${DEPLOY_BRANCH}"
+
+            ${COMPOSE} pull || true
+            ${COMPOSE} up -d --build --remove-orphans
+
+            ${COMPOSE} exec -T web python manage.py migrate --noinput
+            ${COMPOSE} exec -T web python manage.py collectstatic --noinput
+            ${COMPOSE} exec -T web python manage.py check
+
+            WEB_ID="$(${COMPOSE} ps -q web)"
+            if [ -z "${WEB_ID}" ]; then
+              echo "Web container not found."
+              ${COMPOSE} ps
+              exit 1
+            fi
+
+            STATUS=""
+            for i in $(seq 1 30); do
+              STATUS="$(docker inspect --format='{{.State.Health.Status}}' "${WEB_ID}" 2>/dev/null || echo unknown)"
+              echo "Health check #${i}: ${STATUS}"
+              if [ "${STATUS}" = "healthy" ]; then
+                break
+              fi
+              sleep 2
+            done
+
+            if [ "${STATUS}" != "healthy" ]; then
+              echo "Web container did not become healthy."
+              ${COMPOSE} ps
+              ${COMPOSE} logs --tail=120 web
+              exit 1
+            fi
+
+            ${COMPOSE} ps
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_PATH }}
+          DEPLOY_BRANCH: ${{ github.event.inputs.branch || github.event.workflow_run.head_branch }}

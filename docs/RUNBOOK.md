@@ -205,7 +205,160 @@
 - Логи certbot: `docker compose -f docker-compose.prod.yml logs -f certbot`
 - Логи nginx: `docker compose -f docker-compose.prod.yml logs -f nginx`
 
-## 9. Импорт CSV-дампа (refuel_db)
+## 9. CI/CD для одного VPS (GitHub Actions)
+
+### 9.1 Быстрый чеклист первичной настройки VPS
+
+1. Подготовить сервер:
+  - установить Docker Engine и Docker Compose plugin;
+  - открыть входящие `22/tcp`, `80/tcp`, `443/tcp`;
+  - настроить DNS `A`-запись домена на IP сервера.
+2. Создать пользователя деплоя (без root):
+  - пример: `deploy`;
+  - добавить в группу `docker`, чтобы можно было выполнять
+    `docker compose` без `sudo`.
+3. Развернуть проект на сервере:
+  - создать каталог, например `/opt/next-refuels`;
+  - выполнить первый `git clone` репозитория в этот каталог.
+4. Подготовить секреты и окружение:
+  - создать `.env` в каталоге проекта;
+  - проверить обязательные переменные (`DOMAIN`, `SECRET_KEY`,
+    DB/Redis/Telegram и т.д.);
+  - убедиться, что `.env` не попадает в git.
+5. Проверить базовый прод-старт вручную:
+  - `docker compose -f docker-compose.prod.yml up -d --build`;
+  - `docker compose -f docker-compose.prod.yml ps`;
+  - `https://<DOMAIN>/health/` возвращает OK.
+6. Настроить GitHub Secrets:
+  - `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_PORT`, `VPS_APP_PATH`.
+7. Запустить GitHub workflow `Deploy to VPS` вручную один раз
+   (`workflow_dispatch`) и проверить, что деплой проходит end-to-end.
+
+### 9.2 Экспресс-верификация после каждого деплоя
+
+- `docker compose -f docker-compose.prod.yml ps`:
+  - `web` и `certbot` в статусе `healthy`.
+- Проверить endpoint:
+  - `curl -I https://<DOMAIN>/health/`
+- Проверить UI и ключевой flow:
+  - логин;
+  - ввод заправки;
+  - просмотр отчета.
+- Если есть инцидент:
+  - `docker compose -f docker-compose.prod.yml logs --tail=200 web`
+  - `docker compose -f docker-compose.prod.yml logs --tail=200 nginx`
+  - `docker compose -f docker-compose.prod.yml logs --tail=200 certbot`
+
+### 9.3 Команды для первичной настройки Ubuntu VPS
+
+1. Обновить систему и поставить базовые пакеты:
+  - `sudo apt update && sudo apt -y upgrade`
+  - `sudo apt -y install ca-certificates curl git ufw fail2ban`
+2. Установить Docker + Compose plugin:
+  - `sudo install -m 0755 -d /etc/apt/keyrings`
+  - `curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg`
+  - `sudo chmod a+r /etc/apt/keyrings/docker.gpg`
+  - `echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null`
+  - `sudo apt update`
+  - `sudo apt -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`
+  - `sudo systemctl enable --now docker`
+3. Создать пользователя деплоя и выдать доступ к Docker:
+  - `sudo adduser --disabled-password --gecos "" deploy`
+  - `sudo usermod -aG sudo deploy`
+  - `sudo usermod -aG docker deploy`
+4. Настроить firewall:
+  - `sudo ufw default deny incoming`
+  - `sudo ufw default allow outgoing`
+  - `sudo ufw allow OpenSSH`
+  - `sudo ufw allow 80/tcp`
+  - `sudo ufw allow 443/tcp`
+  - `sudo ufw --force enable`
+5. Подготовить каталог проекта:
+  - `sudo mkdir -p /opt/next-refuels`
+  - `sudo chown -R deploy:deploy /opt/next-refuels`
+  - `sudo -u deploy -H bash -lc 'cd /opt/next-refuels && git clone <REPO_URL> .'`
+6. Создать `.env` на сервере:
+  - `sudo -u deploy -H bash -lc 'cd /opt/next-refuels && cp .env.example .env'`
+  - `sudo -u deploy -H bash -lc 'cd /opt/next-refuels && nano .env'`
+
+### 9.4 One-shot script для чистого Ubuntu
+
+Скрипт ниже автоматизирует шаги 9.3 (кроме `git clone` и заполнения `.env`).
+Запускать под `root`:
+
+```bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DEPLOY_USER="${DEPLOY_USER:-deploy}"
+APP_DIR="${APP_DIR:-/opt/next-refuels}"
+
+apt update && apt -y upgrade
+apt -y install ca-certificates curl git ufw fail2ban gnupg
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+  gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/ubuntu \
+$(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  > /etc/apt/sources.list.d/docker.list
+
+apt update
+apt -y install docker-ce docker-ce-cli containerd.io \
+  docker-buildx-plugin docker-compose-plugin
+systemctl enable --now docker
+
+if ! id -u "$DEPLOY_USER" >/dev/null 2>&1; then
+  adduser --disabled-password --gecos "" "$DEPLOY_USER"
+fi
+
+usermod -aG sudo "$DEPLOY_USER"
+usermod -aG docker "$DEPLOY_USER"
+
+mkdir -p "$APP_DIR"
+chown -R "$DEPLOY_USER:$DEPLOY_USER" "$APP_DIR"
+
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow OpenSSH
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+
+echo "Done. Next:"
+echo "1) add SSH key for user $DEPLOY_USER"
+echo "2) git clone repo into $APP_DIR"
+echo "3) create and fill $APP_DIR/.env"
+```
+
+### 9.5 Привязка SSH-ключа GitHub Actions (end-to-end)
+
+1. Сгенерировать отдельный deploy-ключ локально:
+  - `ssh-keygen -t ed25519 -f ./gha_deploy_ed25519 -C "gha-deploy"`
+2. Добавить публичный ключ на VPS для пользователя `deploy`:
+  - `sudo -u deploy mkdir -p /home/deploy/.ssh`
+  - `sudo -u deploy chmod 700 /home/deploy/.ssh`
+  - `sudo -u deploy touch /home/deploy/.ssh/authorized_keys`
+  - `sudo -u deploy chmod 600 /home/deploy/.ssh/authorized_keys`
+  - `echo "<CONTENTS_OF_gha_deploy_ed25519.pub>" | sudo tee -a /home/deploy/.ssh/authorized_keys > /dev/null`
+3. Проверить права:
+  - `sudo chown -R deploy:deploy /home/deploy/.ssh`
+  - `sudo ls -la /home/deploy/.ssh`
+4. Добавить приватный ключ в GitHub:
+  - Repo -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`;
+  - имя секрета: `VPS_SSH_KEY`;
+  - значение: содержимое файла `gha_deploy_ed25519`.
+5. Добавить остальные секреты для workflow деплоя:
+  - `VPS_HOST`, `VPS_USER`, `VPS_PORT`, `VPS_APP_PATH`.
+6. Проверить подключение с локальной машины до запуска CI:
+  - `ssh -i ./gha_deploy_ed25519 deploy@<VPS_HOST> "echo ok"`
+7. Запустить workflow `Deploy to VPS` вручную (`workflow_dispatch`) и убедиться,
+   что шаг `Deploy over SSH` проходит без ошибок.
+
+## 10. Импорт CSV-дампа (refuel_db)
 
 В проекте есть management-команда:
 
@@ -251,7 +404,7 @@
 
 - `python manage.py check`
 
-## 10. Аналитика (раздел «Аналитика» во фронтенде)
+## 11. Аналитика (раздел «Аналитика» во фронтенде)
 
 Данные отдаёт API `GET /api/v1/analytics/stats` (доступ у ролей с правами
 отчётов). Ниже — как интерпретировать блоки дашборда после актуальной логики.
