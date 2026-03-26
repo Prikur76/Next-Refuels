@@ -19,15 +19,15 @@
 
 ```mermaid
 flowchart LR
-  U[Пользователь] --> W[Веб-интерфейс Django]
-  U --> T[Telegram-бот]
-  W --> API[Django backend (Ninja API + views)]
+  U["Пользователь"] --> W["Веб-интерфейс Django"]
+  U --> T["Telegram-бот"]
+  W --> API["Django backend: Ninja API + views"]
   T --> API
-  API --> DB[(PostgreSQL)]
-  API --> Cache[(Redis cache)]
-  API --> S1C[1C:Элемент API]
-  Scheduler[Scheduler container] --> API
-  API --> Logs[SystemLog + лог-файлы]
+  API --> DB["PostgreSQL"]
+  API --> Cache["Redis cache"]
+  API --> S1C["1C:Элемент API"]
+  Scheduler["Scheduler container"] --> API
+  API --> Logs["SystemLog + лог-файлы"]
 ```
 
 ### Компоненты
