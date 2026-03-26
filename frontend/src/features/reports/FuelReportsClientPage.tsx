@@ -697,7 +697,7 @@ export function FuelReportsClientPage({
             }}
           >
             <div className="text-xs text-[var(--muted)]">
-              Выберите фильтры и нажмите "Обновить".
+              Выберите фильтры и нажмите «Обновить».
             </div>
             <div className="toolbar">
               <button
