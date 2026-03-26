@@ -106,7 +106,8 @@
 
 ### 4.3 Health checks
 
-- Backend: `https://<DOMAIN>/health/` (или через внутренний маршрут приложения)
+- Nginx: `https://<DOMAIN>/healthz` (проверка, что reverse-proxy отвечает)
+- Backend (Django): `https://<DOMAIN>/health/` (проверка приложения)
 - Контейнеры:
   - `web` должен быть `healthy`;
   - `certbot` должен быть `healthy`.
@@ -281,7 +282,8 @@
 6. Проверить базовый прод-старт вручную:
   - `docker compose -f docker-compose.prod.yml up -d --build`;
   - `docker compose -f docker-compose.prod.yml ps`;
-  - `https://<DOMAIN>/health/` возвращает OK.
+  - `https://<DOMAIN>/healthz` возвращает `200 OK` (nginx);
+  - `https://<DOMAIN>/health/` возвращает `200 OK` (backend).
 7. Настроить GitHub Secrets:
   - `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_PORT`, `VPS_APP_PATH`.
 8. Запустить GitHub workflow `Deploy to VPS` вручную один раз
@@ -292,6 +294,7 @@
 - `docker compose -f docker-compose.prod.yml ps`:
   - `web` и `certbot` в статусе `healthy`.
 - Проверить endpoint:
+  - `curl -I https://<DOMAIN>/healthz`
   - `curl -I https://<DOMAIN>/health/`
 - Проверить UI и ключевой flow:
   - логин;
