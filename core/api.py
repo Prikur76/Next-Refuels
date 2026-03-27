@@ -84,6 +84,7 @@ class FuelRecordOut(Schema):
     id: int
     car_id: int
     car_state_number: str
+    car_is_fuel_tanker: bool = False
     liters: Decimal
     fuel_type: str
     source: str
@@ -203,6 +204,7 @@ def _ensure_auth(request: HttpRequest):
 
 def _record_to_schema(record: FuelRecord) -> FuelRecordOut:
     car_state_number = record.car.state_number if record.car else ""
+    car_is_fuel_tanker = bool(record.car and record.car.is_fuel_tanker)
     employee_name = (
         record.employee.get_full_name() if record.employee else "Неизвестно"
     )
@@ -215,6 +217,7 @@ def _record_to_schema(record: FuelRecord) -> FuelRecordOut:
         id=record.id,
         car_id=record.car_id,
         car_state_number=car_state_number,
+        car_is_fuel_tanker=car_is_fuel_tanker,
         liters=record.liters,
         fuel_type=record.fuel_type,
         source=record.source,
@@ -1172,6 +1175,9 @@ def analytics_stats(
                 filled_at=record.filled_at.isoformat(),
                 employee_name=employee_name,
                 car=car_label,
+                car_is_fuel_tanker=bool(
+                    record.car and record.car.is_fuel_tanker
+                ),
                 region_name=region_name,
                 fuel_type=fuel_type_code,
                 fuel_type_label=fuel_type_label_value,

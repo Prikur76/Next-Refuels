@@ -21,6 +21,7 @@ function truncateAxisLabel(value: string, maxLen: number): string {
 type BreakdownRow = {
   key: string;
   axisLabel: string;
+  tooltipLabel?: string;
   liters: number;
   records_count: number;
 };
@@ -99,8 +100,8 @@ function HorizontalBreakdownChart(props: {
                     color: "var(--text)",
                   }}
                 >
-                  <div className="max-w-[240px] font-medium leading-snug">
-                    {label}
+                  <div className="max-w-[260px] font-medium leading-snug">
+                    {item.tooltipLabel ?? label}
                   </div>
                   <div className="mt-1">
                     Объем:{" "}
@@ -157,6 +158,8 @@ export function AnalyticsByEmployeeChart(props: {
 export type AnalyticsCarBreakdownRow = {
   car_id: number;
   label: string;
+  state_number?: string;
+  model?: string;
   liters: number;
   records_count: number;
 };
@@ -176,7 +179,8 @@ export function AnalyticsByCarChart(props: {
 
   const breakdownRows: BreakdownRow[] = rows.map((r) => ({
     key: String(r.car_id),
-    axisLabel: r.label,
+    axisLabel: (r.state_number || r.label.split("·")[0] || "").trim(),
+    tooltipLabel: r.label,
     liters: r.liters,
     records_count: r.records_count,
   }));

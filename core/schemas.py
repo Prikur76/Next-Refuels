@@ -37,6 +37,7 @@ class AnalyticsRecentRecordOut(Schema):
     filled_at: str
     employee_name: str
     car: str
+    car_is_fuel_tanker: bool = False
     region_name: Optional[str] = None
     fuel_type: str
     fuel_type_label: str

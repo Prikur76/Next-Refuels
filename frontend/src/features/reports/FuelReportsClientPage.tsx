@@ -130,6 +130,28 @@ function sourceLabel(value: string): string {
   return SOURCE_LABELS[value] ?? value;
 }
 
+function fuelTankerPlateClass(isFuelTanker: boolean): string {
+  return isFuelTanker
+    ? "font-semibold text-amber-700 dark:text-amber-300"
+    : "font-medium";
+}
+
+function renderCarPlateWithBadge(
+  plate: string,
+  isFuelTanker: boolean,
+): ReactElement {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span>{plate}</span>
+      {isFuelTanker ? (
+        <span className="rounded-md border border-amber-200 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-700/70 dark:bg-amber-900/40 dark:text-amber-200">
+          ТЗ
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 type ReportsDatePresetId = "today" | "yesterday" | "last7" | "last30" | "monthToDate";
 
 const REPORTS_DATE_PRESETS: readonly {
@@ -957,7 +979,12 @@ export function FuelReportsClientPage({
                     {sortedJournalItems.map((item) => (
                       <tr key={item.id}>
                         <td className="mono">{formatIntegerRu(item.id)}</td>
-                        <td>{item.car_state_number}</td>
+                        <td className={fuelTankerPlateClass(item.car_is_fuel_tanker)}>
+                          {renderCarPlateWithBadge(
+                            item.car_state_number,
+                            item.car_is_fuel_tanker,
+                          )}
+                        </td>
                         <td>{formatDecimal(item.liters)}</td>
                         <td>
                           {item.fuel_type === "GASOLINE"
@@ -994,8 +1021,15 @@ export function FuelReportsClientPage({
                     <div className="mt-3 space-y-2 text-sm">
                       <div className="flex justify-between gap-3">
                         <span className="shrink-0 text-[var(--muted)]">Авто</span>
-                        <span className="min-w-0 break-words text-right font-medium">
-                          {item.car_state_number}
+                        <span
+                          className={`min-w-0 break-words text-right ${fuelTankerPlateClass(
+                            item.car_is_fuel_tanker,
+                          )}`}
+                        >
+                          {renderCarPlateWithBadge(
+                            item.car_state_number,
+                            item.car_is_fuel_tanker,
+                          )}
                         </span>
                       </div>
                       <div className="flex justify-between gap-3">

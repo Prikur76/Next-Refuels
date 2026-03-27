@@ -42,6 +42,7 @@ export interface FuelRecordOut {
   id: number;
   car_id: number;
   car_state_number: string;
+  car_is_fuel_tanker: boolean;
   liters: number | string;
   fuel_type: FuelType;
   source: FuelSource;
