@@ -180,6 +180,12 @@ type AnalyticsByDayPoint = {
   liters: number;
 };
 
+type AnalyticsByDayRegionPoint = {
+  date: string;
+  region_name: string;
+  liters: number;
+};
+
 type AnalyticsRefuelSourceSlice = {
   source: FuelSource | "";
   label: string;
@@ -221,6 +227,7 @@ type AnalyticsCarBreakdown = {
 
 interface AnalyticsData {
   by_day: AnalyticsByDayPoint[];
+  by_day_region: AnalyticsByDayRegionPoint[];
   refuel_sources: AnalyticsRefuelSourceSlice[];
   refuel_channels: AnalyticsRefuelChannelSlice[];
   recent_records: AnalyticsRecentRecord[];
@@ -418,13 +425,38 @@ export default function AnalyticsPage() {
     </div>
   );
 
-  const litersByDay = statsQuery.data?.by_day ?? [];
-  const sourceSlices = statsQuery.data?.refuel_sources ?? [];
-  const channelSlices = statsQuery.data?.refuel_channels ?? [];
-  const recent = statsQuery.data?.recent_records ?? [];
-  const byEmployee = statsQuery.data?.by_employee ?? [];
-  const byCar = statsQuery.data?.by_car ?? [];
-  const byCarFuelTankers = statsQuery.data?.by_car_fuel_tankers ?? [];
+  const litersByDay = useMemo(
+    () => statsQuery.data?.by_day ?? [],
+    [statsQuery.data],
+  );
+  const litersByDayRegion = useMemo(
+    () => statsQuery.data?.by_day_region ?? [],
+    [statsQuery.data],
+  );
+  const sourceSlices = useMemo(
+    () => statsQuery.data?.refuel_sources ?? [],
+    [statsQuery.data],
+  );
+  const channelSlices = useMemo(
+    () => statsQuery.data?.refuel_channels ?? [],
+    [statsQuery.data],
+  );
+  const recent = useMemo(
+    () => statsQuery.data?.recent_records ?? [],
+    [statsQuery.data],
+  );
+  const byEmployee = useMemo(
+    () => statsQuery.data?.by_employee ?? [],
+    [statsQuery.data],
+  );
+  const byCar = useMemo(
+    () => statsQuery.data?.by_car ?? [],
+    [statsQuery.data],
+  );
+  const byCarFuelTankers = useMemo(
+    () => statsQuery.data?.by_car_fuel_tankers ?? [],
+    [statsQuery.data],
+  );
 
   const lineChartHeight = layoutSm ? LINE_CHART_HEIGHT_WIDE_PX : LINE_CHART_HEIGHT_NARROW_PX;
 
@@ -440,6 +472,75 @@ export default function AnalyticsPage() {
     TGBOT: "#3b82f6",
     TRUCK: "#f59e0b",
   };
+
+  const dashboardTotalLiters = useMemo<number>(() => {
+    return litersByDay.reduce((sum, point) => sum + toNumber(point.liters), 0);
+  }, [litersByDay]);
+
+  const dashboardFilteredRefuels = useMemo<number>(() => {
+    return channelSlices.reduce(
+      (sum, row) => sum + Math.max(0, toNumber(row.records_count)),
+      0,
+    );
+  }, [channelSlices]);
+
+  const dashboardFilteredLiters = useMemo<number>(() => {
+    return channelSlices.reduce((sum, row) => sum + toNumber(row.liters), 0);
+  }, [channelSlices]);
+
+  const dashboardAvgLitersPerRefuel = useMemo<number>(() => {
+    if (dashboardFilteredRefuels <= 0) return 0;
+    return dashboardFilteredLiters / dashboardFilteredRefuels;
+  }, [dashboardFilteredLiters, dashboardFilteredRefuels]);
+
+  const dashboardDaysCount = useMemo<number>(() => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1;
+    const diffMs = end.getTime() - start.getTime();
+    const dayMs = 24 * 60 * 60 * 1000;
+    return Math.max(1, Math.floor(diffMs / dayMs) + 1);
+  }, [endDate, startDate]);
+
+  const dashboardAvgRefuelsPerDay = useMemo<number>(() => {
+    return dashboardFilteredRefuels / dashboardDaysCount;
+  }, [dashboardDaysCount, dashboardFilteredRefuels]);
+
+  const regionLineRows = useMemo(() => {
+    const byDate = new Map<string, Record<string, number>>();
+    const regionNamesSet = new Set<string>();
+
+    for (const row of litersByDayRegion) {
+      const regionName = row.region_name || "Без региона";
+      regionNamesSet.add(regionName);
+      const dateEntry = byDate.get(row.date) ?? {};
+      dateEntry[regionName] = toNumber(row.liters);
+      byDate.set(row.date, dateEntry);
+    }
+
+    const regionNames = Array.from(regionNamesSet).sort((a, b) =>
+      a.localeCompare(b, "ru"),
+    );
+    const rows = Array.from(byDate.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, values]) => ({
+        date,
+        ...values,
+      }));
+
+    return { rows, regionNames };
+  }, [litersByDayRegion]);
+
+  const regionPalette = [
+    "#22c55e",
+    "#8b5cf6",
+    "#3b82f6",
+    "#f59e0b",
+    "#ef4444",
+    "#14b8a6",
+    "#f97316",
+    "#a855f7",
+  ];
 
   function sliceColor(source: string): string {
     return colorBySource[source] ?? "#64748b";
@@ -572,71 +673,42 @@ export default function AnalyticsPage() {
             </div>
           ) : statsQuery.data ? (
             <>
-              <div className="grid w-full min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35 }}
-                className="card min-w-0 p-3 sm:p-4"
-              >
-                <div className="text-sm font-semibold">Объем по дням</div>
-                <MeasureWidth
-                  className="mt-3 min-w-0"
-                  style={{
-                    height: lineChartHeight,
-                    minHeight: lineChartHeight,
-                  }}
-                  fallback={
-                    <div
-                      className="h-full w-full rounded-md bg-[color-mix(in_srgb,var(--muted)_12%,transparent)]"
-                      aria-hidden="true"
-                    />
-                  }
-                >
-                  {(widthPx) => (
-                    <LineChart
-                      width={widthPx}
-                      height={lineChartHeight}
-                      data={litersByDay}
-                      margin={{
-                        top: 8,
-                        right: layoutSm ? 10 : 4,
-                        left: layoutSm ? 0 : -12,
-                        bottom: layoutSm ? 8 : 36,
-                      }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: layoutSm ? 12 : 10 }}
-                        angle={layoutSm ? 0 : -32}
-                        textAnchor={layoutSm ? "middle" : "end"}
-                        height={layoutSm ? 28 : 52}
-                        interval="preserveStartEnd"
-                      />
-                      <YAxis
-                        tick={{ fontSize: layoutSm ? 12 : 10 }}
-                        width={layoutSm ? undefined : 32}
-                        tickFormatter={(v: number) => formatDecimal(v)}
-                      />
-                      <Tooltip
-                        formatter={(value: unknown) =>
-                          `${formatDecimal(value as number)} л`
-                        }
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="liters"
-                        stroke="#22c55e"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </LineChart>
-                  )}
-                </MeasureWidth>
-              </motion.div>
+              <div className="grid w-full min-w-0 grid-cols-1 gap-4 xl:grid-cols-4">
+                {[
+                  {
+                    title: "Всего литров",
+                    value: `${formatIntegerRu(Math.round(dashboardTotalLiters))} л`,
+                  },
+                  {
+                    title: "Количество заправок",
+                    value: `${formatIntegerRu(dashboardFilteredRefuels)} шт.`,
+                  },
+                  {
+                    title: "Средний объем заправки",
+                    value: `${formatDecimal(dashboardAvgLitersPerRefuel)} л`,
+                  },
+                  {
+                    title: "Среднее число заправок в день",
+                    value: formatDecimal(dashboardAvgRefuelsPerDay),
+                  },
+                ].map((metric, idx) => (
+                  <motion.div
+                    key={metric.title}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: idx * 0.04 }}
+                    className="card min-w-0 p-3 sm:p-4"
+                  >
+                    <div className="text-xs text-[var(--muted)]">{metric.title}</div>
+                    <div className="mt-1 text-xl font-semibold tabular-nums">
+                      {metric.value}
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
 
-              <motion.div
+              <div className="mt-4 grid w-full min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+                <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, delay: 0.06 }}
@@ -725,105 +797,249 @@ export default function AnalyticsPage() {
                   ))}
                 </div>
               </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, delay: 0.09 }}
+                  className="card min-w-0 p-3 sm:p-4"
+                >
+                  <div className="text-sm font-semibold">
+                    Карта, Telegram-бот и топливозаправщик
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    Только заправки на автомобили без отметки «топливозаправщик»:
+                    карта, бот и выдача с бензовоза (способ «Топливозаправщик»).
+                    Самозаправ самих топливозаправщиков здесь не учитывается.
+                  </p>
+                  {channelSlices.some((c) => c.liters > 0) ? (
+                    <MeasureWidth
+                      className="mt-2 w-full min-w-0"
+                      style={{ minHeight: PIE_MIN_PX }}
+                      fallback={
+                        <div
+                          className="mx-auto aspect-square w-full max-w-[280px] rounded-md bg-[color-mix(in_srgb,var(--muted)_12%,transparent)]"
+                          aria-hidden="true"
+                        />
+                      }
+                    >
+                      {(widthPx) => {
+                        const size = Math.max(
+                          PIE_MIN_PX,
+                          Math.min(widthPx, PIE_MAX_PX),
+                        );
+                        const { inner, outer } = pieRadii(size);
+                        const pieRows = channelSlices.filter((c) => c.liters > 0);
+                        return (
+                          <div className="flex justify-center">
+                            <PieChart width={size} height={size}>
+                              <Tooltip
+                                formatter={(value: unknown) =>
+                                  `${formatDecimal(value as number)} л`
+                                }
+                              />
+                              <Pie
+                                data={pieRows.map((c) => ({
+                                  name: c.label,
+                                  value: c.liters,
+                                  channel: c.channel,
+                                }))}
+                                dataKey="value"
+                                nameKey="name"
+                                innerRadius={inner}
+                                outerRadius={outer}
+                                paddingAngle={2}
+                              >
+                                {pieRows.map((c) => (
+                                  <Cell
+                                    key={c.channel}
+                                    fill={channelSliceColor(c.channel)}
+                                  />
+                                ))}
+                              </Pie>
+                            </PieChart>
+                          </div>
+                        );
+                      }}
+                    </MeasureWidth>
+                  ) : (
+                    <p className="mt-3 text-sm text-[var(--muted)]">
+                      Нет записей по этим каналам за период.
+                    </p>
+                  )}
+
+                  <div className="mt-3 space-y-2">
+                    {channelSlices.map((c) => (
+                      <div
+                        key={c.channel}
+                        className="flex flex-wrap items-baseline justify-between gap-2 text-sm"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-block shrink-0"
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: 9999,
+                              background: channelSliceColor(c.channel),
+                            }}
+                          />
+                          <span>{c.label}</span>
+                        </div>
+                        <div className="tabular-nums">
+                          <span className="font-semibold">
+                            {formatDecimal(c.liters)} л
+                          </span>
+                          <span className="text-[var(--muted)]">
+                            {" "}
+                            · {formatIntegerRu(c.records_count)} шт.
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
               </div>
 
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, delay: 0.09 }}
+                transition={{ duration: 0.35 }}
                 className="card mt-4 min-w-0 p-3 sm:p-4"
               >
-                <div className="text-sm font-semibold">
-                  Карта, Telegram-бот и топливозаправщик
-                </div>
-                <p className="mt-1 text-xs text-[var(--muted)]">
-                  Только заправки на автомобили без отметки «топливозаправщик»:
-                  карта, бот и выдача с бензовоза (способ «Топливозаправщик»).
-                  Самозаправ самих топливозаправщиков здесь не учитывается.
-                </p>
-                {channelSlices.some((c) => c.liters > 0) ? (
-                  <MeasureWidth
-                    className="mt-2 w-full min-w-0"
-                    style={{ minHeight: PIE_MIN_PX }}
-                    fallback={
-                      <div
-                        className="mx-auto aspect-square w-full max-w-[280px] rounded-md bg-[color-mix(in_srgb,var(--muted)_12%,transparent)]"
-                        aria-hidden="true"
-                      />
-                    }
-                  >
-                    {(widthPx) => {
-                      const size = Math.max(
-                        PIE_MIN_PX,
-                        Math.min(widthPx, PIE_MAX_PX),
-                      );
-                      const { inner, outer } = pieRadii(size);
-                      const pieRows = channelSlices.filter((c) => c.liters > 0);
-                      return (
-                        <div className="flex justify-center">
-                          <PieChart width={size} height={size}>
-                            <Tooltip
-                              formatter={(value: unknown) =>
-                                `${formatDecimal(value as number)} л`
-                              }
-                            />
-                            <Pie
-                              data={pieRows.map((c) => ({
-                                name: c.label,
-                                value: c.liters,
-                                channel: c.channel,
-                              }))}
-                              dataKey="value"
-                              nameKey="name"
-                              innerRadius={inner}
-                              outerRadius={outer}
-                              paddingAngle={2}
-                            >
-                              {pieRows.map((c) => (
-                                <Cell
-                                  key={c.channel}
-                                  fill={channelSliceColor(c.channel)}
-                                />
-                              ))}
-                            </Pie>
-                          </PieChart>
-                        </div>
-                      );
-                    }}
-                  </MeasureWidth>
-                ) : (
-                  <p className="mt-3 text-sm text-[var(--muted)]">
-                    Нет записей по этим каналам за период.
-                  </p>
-                )}
-
-                <div className="mt-3 space-y-2">
-                  {channelSlices.map((c) => (
+                <div className="text-sm font-semibold">Объем по дням</div>
+                <MeasureWidth
+                  className="mt-3 min-w-0"
+                  style={{
+                    height: lineChartHeight,
+                    minHeight: lineChartHeight,
+                  }}
+                  fallback={
                     <div
-                      key={c.channel}
-                      className="flex flex-wrap items-baseline justify-between gap-2 text-sm"
+                      className="h-full w-full rounded-md bg-[color-mix(in_srgb,var(--muted)_12%,transparent)]"
+                      aria-hidden="true"
+                    />
+                  }
+                >
+                  {(widthPx) => (
+                    <LineChart
+                      width={widthPx}
+                      height={lineChartHeight}
+                      data={litersByDay}
+                      margin={{
+                        top: 8,
+                        right: layoutSm ? 10 : 4,
+                        left: layoutSm ? 0 : -12,
+                        bottom: layoutSm ? 8 : 36,
+                      }}
                     >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="inline-block shrink-0"
-                          style={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: 9999,
-                            background: channelSliceColor(c.channel),
-                          }}
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: layoutSm ? 12 : 10 }}
+                        angle={layoutSm ? 0 : -32}
+                        textAnchor={layoutSm ? "middle" : "end"}
+                        height={layoutSm ? 28 : 52}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        tick={{ fontSize: layoutSm ? 12 : 10 }}
+                        width={layoutSm ? undefined : 40}
+                        tickFormatter={(v: number) => formatDecimal(v)}
+                      />
+                      <Tooltip
+                        formatter={(value: unknown) =>
+                          `${formatDecimal(value as number)} л`
+                        }
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="liters"
+                        stroke="#22c55e"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </LineChart>
+                  )}
+                </MeasureWidth>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.04 }}
+                className="card mt-4 min-w-0 p-3 sm:p-4"
+              >
+                <div className="text-sm font-semibold">Объем по дням и регионам</div>
+                <MeasureWidth
+                  className="mt-3 min-w-0"
+                  style={{
+                    height: lineChartHeight,
+                    minHeight: lineChartHeight,
+                  }}
+                  fallback={
+                    <div
+                      className="h-full w-full rounded-md bg-[color-mix(in_srgb,var(--muted)_12%,transparent)]"
+                      aria-hidden="true"
+                    />
+                  }
+                >
+                  {(widthPx) => (
+                    <LineChart
+                      width={widthPx}
+                      height={lineChartHeight}
+                      data={regionLineRows.rows}
+                      margin={{
+                        top: 8,
+                        right: layoutSm ? 12 : 4,
+                        left: layoutSm ? 0 : -12,
+                        bottom: layoutSm ? 8 : 36,
+                      }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: layoutSm ? 12 : 10 }}
+                        angle={layoutSm ? 0 : -32}
+                        textAnchor={layoutSm ? "middle" : "end"}
+                        height={layoutSm ? 28 : 52}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        tick={{ fontSize: layoutSm ? 12 : 10 }}
+                        width={layoutSm ? undefined : 40}
+                        tickFormatter={(v: number) => formatDecimal(v)}
+                      />
+                      <Tooltip
+                        formatter={(value: unknown) =>
+                          `${formatDecimal(value as number)} л`
+                        }
+                      />
+                      {regionLineRows.regionNames.map((region, idx) => (
+                        <Line
+                          key={region}
+                          type="monotone"
+                          dataKey={region}
+                          name={region}
+                          stroke={regionPalette[idx % regionPalette.length]}
+                          strokeWidth={2}
+                          dot={false}
                         />
-                        <span>{c.label}</span>
-                      </div>
-                      <div className="tabular-nums">
-                        <span className="font-semibold">
-                          {formatDecimal(c.liters)} л
-                        </span>
-                        <span className="text-[var(--muted)]">
-                          {" "}
-                          · {formatIntegerRu(c.records_count)} шт.
-                        </span>
-                      </div>
+                      ))}
+                    </LineChart>
+                  )}
+                </MeasureWidth>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {regionLineRows.regionNames.map((region, idx) => (
+                    <div key={region} className="flex items-center gap-2 text-xs sm:text-sm">
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={{
+                          background:
+                            regionPalette[idx % regionPalette.length],
+                        }}
+                      />
+                      <span>{region}</span>
                     </div>
                   ))}
                 </div>
@@ -857,7 +1073,7 @@ export default function AnalyticsPage() {
                     Топ сотрудников по объёму
                   </div>
                   <p className="mt-1 text-xs text-[var(--muted)]">
-                    Суммарный объём заправок по сотрудникам (топ до 20 за
+                    Суммарный объём заправок по сотрудникам (топ до 10 за
                     период).
                   </p>
                   <AnalyticsByEmployeeChart rows={byEmployee} />
@@ -873,8 +1089,8 @@ export default function AnalyticsPage() {
                     Топ автомобилей по объёму
                   </div>
                   <p className="mt-1 text-xs text-[var(--muted)]">
-                    Без топливозаправщиков: суммарный объём по госномерам (топ
-                    до 20 за период).
+                    Без топливозаправщиков: суммарный объём по госномерам
+                    (топ до 10 за период).
                   </p>
                   <AnalyticsByCarChart rows={byCar} />
                 </motion.div>
@@ -891,7 +1107,7 @@ export default function AnalyticsPage() {
                   </div>
                   <p className="mt-1 text-xs text-[var(--muted)]">
                     Автомобили с отметкой «топливозаправщик» в справочнике (топ
-                    до 20 за период). Учитываются все заправки по этим машинам,
+                    до 10 за период). Учитываются все заправки по этим машинам,
                     включая заправку самого заправщика картой или через бота.
                   </p>
                   <AnalyticsByCarChart rows={byCarFuelTankers} />

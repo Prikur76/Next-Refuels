@@ -19,6 +19,7 @@ import type {
   SummaryOut,
 } from "@/lib/api/types";
 import { SkeletonLine } from "@/components/skeleton/Skeleton";
+import { formatDecimalRu, formatIntegerRu } from "@/lib/format-number-ru";
 
 function localYmdToIso(y: number, monthIndex: number, day: number): string {
   const m = String(monthIndex + 1).padStart(2, "0");
@@ -54,7 +55,7 @@ function toNumber(value: number | string | null | undefined): number {
 }
 
 function formatDecimal(value: number | string | null | undefined): string {
-  return toNumber(value).toFixed(2);
+  return formatDecimalRu(value);
 }
 
 function formatLocalDateTime(value: string): string {
@@ -286,11 +287,11 @@ function JournalPaginationBar(props: {
           <>
             Записи{" "}
             <span className="tabular-nums font-medium text-[var(--text)]">
-              {rangeStart}–{rangeEnd}
+              {formatIntegerRu(rangeStart)}–{formatIntegerRu(rangeEnd)}
             </span>
             {" "}из{" "}
             <span className="tabular-nums font-medium text-[var(--text)]">
-              {totalRecords}
+              {formatIntegerRu(totalRecords)}
             </span>
             {totalPages > 1 ? (
               <>
@@ -298,11 +299,11 @@ function JournalPaginationBar(props: {
                 <span className="text-[var(--muted)]">·</span>
                 {" "}
                 <span className="tabular-nums font-medium text-[var(--text)]">
-                  {currentPage}
+                  {formatIntegerRu(currentPage)}
                 </span>
                 <span className="text-[var(--muted)]">/</span>
                 <span className="tabular-nums font-medium text-[var(--text)]">
-                  {totalPages}
+                  {formatIntegerRu(totalPages)}
                 </span>
               </>
             ) : null}
@@ -401,6 +402,7 @@ export function FuelReportsClientPage({
   const [toDate, setToDate] = useState(todayIso());
   const [source, setSource] = useState<string>("");
   const [employee, setEmployee] = useState<string>("");
+  const [carStateNumber, setCarStateNumber] = useState<string>("");
   const [regionId, setRegionId] = useState<string>("");
   const [limit, setLimit] = useState<number>(25);
   const [offset, setOffset] = useState<number>(0);
@@ -426,11 +428,12 @@ export function FuelReportsClientPage({
       to_date: dateOrUndefined(toDate),
       source: source || undefined,
       employee: employee.trim() || undefined,
+      car_state_number: carStateNumber.trim() || undefined,
       region_id: regionIdValue,
       offset,
       limit,
     }),
-    [employee, fromDate, limit, offset, regionIdValue, source, toDate]
+    [carStateNumber, employee, fromDate, limit, offset, regionIdValue, source, toDate]
   );
 
   const summaryQuery = useQuery<SummaryOut, Error>({
@@ -441,6 +444,7 @@ export function FuelReportsClientPage({
         to_date: filters.to_date,
         source: filters.source,
         employee: filters.employee,
+        car_state_number: filters.car_state_number,
         region_id: filters.region_id,
       }),
     enabled: queryNonce > 0,
@@ -479,6 +483,9 @@ export function FuelReportsClientPage({
     params.set("to_date", toDate);
     if (source) params.set("source", source);
     if (employee.trim()) params.set("employee", employee.trim());
+    if (carStateNumber.trim()) {
+      params.set("car_state_number", carStateNumber.trim());
+    }
     if (regionIdValue !== undefined) {
       params.set("region_id", String(regionIdValue));
     }
@@ -492,6 +499,9 @@ export function FuelReportsClientPage({
     }
     if (employee.trim()) {
       parts.push(employee.trim());
+    }
+    if (carStateNumber.trim()) {
+      parts.push(carStateNumber.trim());
     }
     if (regionIdValue !== undefined) {
       const regionName =
@@ -567,10 +577,7 @@ export function FuelReportsClientPage({
       </p>
 
         <div className="mt-4 card p-4">
-          <div
-            className="grid gap-3"
-            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}
-          >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <label className="label-app">
               С
               <input
@@ -616,6 +623,16 @@ export function FuelReportsClientPage({
                     label: name,
                   })),
                 ]}
+              />
+            </label>
+            <label className="label-app">
+              Номер машины
+              <input
+                className="input-app"
+                type="text"
+                placeholder="Напр. А123ВС"
+                value={carStateNumber}
+                onChange={(e) => setCarStateNumber(e.target.value)}
               />
             </label>
             <label className="label-app">
@@ -686,23 +703,14 @@ export function FuelReportsClientPage({
             </div>
           </div>
 
-          <div
-            className="mt-3"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "0.75rem",
-              flexWrap: "wrap",
-            }}
-          >
-            <div className="text-xs text-[var(--muted)]">
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="order-2 text-xs text-[var(--muted)] sm:order-1">
               Выберите фильтры и нажмите «Обновить».
             </div>
-            <div className="toolbar">
+            <div className="toolbar order-1 w-full sm:order-2 sm:w-auto">
               <button
                 type="button"
-                className="btn-app btn-primary !min-h-9 !px-3 !py-1.5 text-sm"
+                className="btn-app btn-primary w-full min-h-11 sm:w-auto sm:min-h-9 sm:!px-3 sm:!py-1.5 sm:text-sm"
                 onClick={() => {
                   setOffset(0);
                   setQueryNonce((n) => n + 1);
@@ -713,7 +721,7 @@ export function FuelReportsClientPage({
 
               <button
                 type="button"
-                className="btn-app !min-h-9 !px-3 !py-1.5 text-sm"
+                className="btn-app w-full min-h-11 sm:w-auto sm:min-h-9 sm:!px-3 sm:!py-1.5 sm:text-sm"
                 aria-disabled={isExportingCsv}
                 onClick={() => {
                   handleExport("csv");
@@ -726,7 +734,7 @@ export function FuelReportsClientPage({
               </button>
               <button
                 type="button"
-                className="btn-app !min-h-9 !px-3 !py-1.5 text-sm"
+                className="btn-app w-full min-h-11 sm:w-auto sm:min-h-9 sm:!px-3 sm:!py-1.5 sm:text-sm"
                 aria-disabled={isExportingXlsx}
                 onClick={() => {
                   handleExport("xlsx");
@@ -760,7 +768,7 @@ export function FuelReportsClientPage({
                 <div className="text-sm">
                   Записей:{" "}
                   <span className="font-semibold">
-                    {summaryQuery.data.total_records}
+                    {formatIntegerRu(summaryQuery.data.total_records)}
                   </span>
                 </div>
                 <div className="text-sm">
@@ -795,7 +803,7 @@ export function FuelReportsClientPage({
             </div>
           ) : recordsQuery.data?.items?.length ? (
             <div className="mt-3">
-              <div className="hidden lg:block overflow-x-auto">
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="table-app">
                   <thead>
                     <tr>
@@ -948,7 +956,7 @@ export function FuelReportsClientPage({
                   <tbody>
                     {sortedJournalItems.map((item) => (
                       <tr key={item.id}>
-                        <td className="mono">{item.id}</td>
+                        <td className="mono">{formatIntegerRu(item.id)}</td>
                         <td>{item.car_state_number}</td>
                         <td>{formatDecimal(item.liters)}</td>
                         <td>

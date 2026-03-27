@@ -78,15 +78,24 @@
   - `cp .env.prod.example .env`
 2. Заполнить минимум:
   - `SECRET_KEY`, `DOMAIN`, `LETSENCRYPT_EMAIL`;
+  - `ALLOWED_HOSTS`, `EXTRA_ALLOWED_HOSTS`;
   - `DATABASE_URL` и `POSTGRES_*`;
   - `TELEGRAM_BOT_TOKEN` (если включён сервис `bot`);
   - `ELEMENT_API_*` (если используется sync с `1C:Элемент`).
+
+Примечание по host-настройкам в prod:
+
+- `docker-compose.prod.yml` задаёт `ALLOWED_HOSTS` как
+  `${DOMAIN},localhost,127.0.0.1,web`;
+- дополнительные внешние host (например apex-домен и IP для прямой проверки)
+  задавайте через `EXTRA_ALLOWED_HOSTS`.
 
 Минимальная матрица переменных:
 
 | Переменная/блок | Статус | Когда обязательна |
 |---|---|---|
 | `SECRET_KEY`, `DEBUG=False`, `DOMAIN`, `LETSENCRYPT_EMAIL` | обязательно | всегда в prod |
+| `ALLOWED_HOSTS`, `EXTRA_ALLOWED_HOSTS` | обязательно | всегда в prod |
 | `DATABASE_URL`, `POSTGRES_*` | обязательно | всегда в prod |
 | `TELEGRAM_*` | условно | если запускается `bot` |
 | `ELEMENT_API_*` | условно | если используется `sync_cars_with_element` |

@@ -21,6 +21,7 @@ from pydantic import Field
 from core.models import Car, FuelRecord, Region, SystemLog
 from core.schemas import (
     AnalyticsByDayPointOut,
+    AnalyticsByDayRegionPointOut,
     AnalyticsCarBreakdownOut,
     AnalyticsDataOut,
     AnalyticsEmployeeBreakdownOut,
@@ -249,6 +250,7 @@ def _apply_reports_filters(
     region: Optional[str] = None,
     employee: Optional[str] = None,
     car_id: Optional[int] = None,
+    car_state_number: Optional[str] = None,
     source: Optional[str] = None,
 ):
     """Применяет единый набор фильтров для отчетов."""
@@ -273,6 +275,10 @@ def _apply_reports_filters(
         )
     if car_id:
         qs = qs.filter(car_id=car_id)
+    if car_state_number:
+        car_state_number_value = car_state_number.strip()
+        if car_state_number_value:
+            qs = qs.filter(car__state_number__icontains=car_state_number_value)
     if source:
         qs = qs.filter(source=source)
     return qs
@@ -476,6 +482,7 @@ def reports_summary(
     region: Optional[str] = None,
     employee: Optional[str] = None,
     car_id: Optional[int] = None,
+    car_state_number: Optional[str] = None,
     source: Optional[str] = None,
 ):
     _ensure_auth(request)
@@ -489,6 +496,7 @@ def reports_summary(
         region=region,
         employee=employee,
         car_id=car_id,
+        car_state_number=car_state_number,
         source=source,
     )
     stats = qs.fuel_statistics()
@@ -564,6 +572,7 @@ def reports_records(
     region: Optional[str] = None,
     employee: Optional[str] = None,
     car_id: Optional[int] = None,
+    car_state_number: Optional[str] = None,
     source: Optional[str] = None,
     cursor: Optional[str] = None,
     offset: int = 0,
@@ -581,6 +590,7 @@ def reports_records(
         region=region,
         employee=employee,
         car_id=car_id,
+        car_state_number=car_state_number,
         source=source,
     )
 
@@ -936,8 +946,8 @@ def reports_access_events(request: HttpRequest, limit: int = 100):
 
 
 RECENT_RECORDS_LIMIT = 20
-ANALYTICS_TOP_EMPLOYEES = 20
-ANALYTICS_TOP_CARS = 20
+ANALYTICS_TOP_EMPLOYEES = 10
+ANALYTICS_TOP_CARS = 10
 
 
 def _format_analytics_employee_name(
@@ -1098,6 +1108,25 @@ def analytics_stats(
             )
         )
 
+    by_day_region_qs = (
+        qs.annotate(day=TruncDay("filled_at"))
+        .values("day", "historical_region__name")
+        .annotate(total_liters=Sum("liters"))
+        .order_by("day", "historical_region__name")
+    )
+    by_day_region: list[AnalyticsByDayRegionPointOut] = []
+    for row in by_day_region_qs:
+        day_dt = row.get("day")
+        if day_dt is None:
+            continue
+        by_day_region.append(
+            AnalyticsByDayRegionPointOut(
+                date=day_dt.date().isoformat(),
+                region_name=str(row.get("historical_region__name") or "Без региона"),
+                liters=float(row.get("total_liters") or 0),
+            )
+        )
+
     refuel_sources = _refuel_sources_card_tgbot_only(qs)
 
     # Карта / бот / ТЗ: только заправки на автомобили, не являющиеся
@@ -1210,6 +1239,7 @@ def analytics_stats(
 
     return AnalyticsDataOut(
         by_day=by_day,
+        by_day_region=by_day_region,
         refuel_sources=refuel_sources,
         refuel_channels=refuel_channels,
         recent_records=recent_records,

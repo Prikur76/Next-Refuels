@@ -96,15 +96,19 @@
 
 ## Сетевые ограничения
 
-- `ALLOWED_HOSTS` зависит от `DEBUG`:
+- `ALLOWED_HOSTS` зависит от окружения и `DEBUG`:
   - в dev по умолчанию разрешены только `127.0.0.1` и `localhost`;
-  - в докере/контейнерной среде это важно, т.к. host может быть
-    `web:8000`, что приведет к `DisallowedHost`.
+  - в prod при запуске через `docker-compose.prod.yml` переменная
+    `ALLOWED_HOSTS` переопределяется и включает:
+    `${DOMAIN},localhost,127.0.0.1,web`;
+  - для дополнительных внешних host (например apex-домена и IP) используйте
+    `EXTRA_ALLOWED_HOSTS` в `.env`.
 
 Если фронтенд ходит к backend из docker-сети, убедитесь, что:
 
 - `DEBUG` выставлен корректно, и
-- `ALLOWED_HOSTS` дополнен нужными host-именами.
+- `ALLOWED_HOSTS` и `EXTRA_ALLOWED_HOSTS` покрывают все реальные host-значения
+  из заголовка `Host`.
 
 ## SSH-безопасность для CI/CD (один VPS)
 
@@ -155,4 +159,3 @@
 - Деталей по политике password complexity/lockout на уровне login не
   фиксируется в документации; актуальность зависит от реализации
   `AuthThrottleMiddleware` и настроек env.
-

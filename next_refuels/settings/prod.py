@@ -14,8 +14,27 @@ from .base import ADMINS, LOGGING, env
 # Ensure DEBUG off
 DEBUG = False
 
-# Hosts - require explicit value in env
-ALLOWED_HOSTS = env.list(
+def _normalize_host(value: str) -> str:
+    """Normalize host token from env values."""
+    host = value.strip().lower()
+    if not host:
+        return ""
+    host = host.split("://", 1)[-1]
+    host = host.split("/", 1)[0]
+    host = host.split(":", 1)[0]
+    return host.strip(".")
+
+
+def _apex_domain(host: str) -> str:
+    """Return apex domain for subdomain host."""
+    parts = host.split(".")
+    if len(parts) < 3:
+        return host
+    return ".".join(parts[-2:])
+
+
+# Hosts: support compose override + explicit extras from env.
+_allowed_hosts = env.list(
     "ALLOWED_HOSTS",
     default=[
         "127.0.0.1",
@@ -23,6 +42,23 @@ ALLOWED_HOSTS = env.list(
     ],
     delimiter=",",
 )
+_extra_allowed_hosts: list[str] = env.list(
+    "EXTRA_ALLOWED_HOSTS",
+    default=[],
+    delimiter=",",
+)
+_domain_host = _normalize_host(env.str("DOMAIN", ""))
+
+_host_candidates = [*_allowed_hosts, *_extra_allowed_hosts]
+if _domain_host:
+    _host_candidates.append(_domain_host)
+    _host_candidates.append(_apex_domain(_domain_host))
+
+ALLOWED_HOSTS = []
+for _host in _host_candidates:
+    _normalized = _normalize_host(_host)
+    if _normalized and _normalized not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_normalized)
 
 # Database
 DATABASE_URL = env.str("DATABASE_URL", None)
@@ -51,7 +87,7 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool(
 SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", True)
 
 # Running behind a proxy/load balancer
-SECURE_PROXY_SSL_HEADER: tuple[str, str] | None = (
+SECURE_PROXY_SSL_HEADER = (
     "HTTP_X_FORWARDED_PROTO",
     "https",
 )

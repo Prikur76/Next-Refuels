@@ -10,6 +10,12 @@ class AnalyticsByDayPointOut(Schema):
     liters: float
 
 
+class AnalyticsByDayRegionPointOut(Schema):
+    date: str
+    region_name: str
+    liters: float
+
+
 class AnalyticsRefuelSourceSliceOut(Schema):
     source: str
     label: str
@@ -55,6 +61,7 @@ class AnalyticsCarBreakdownOut(Schema):
 
 class AnalyticsDataOut(Schema):
     by_day: list[AnalyticsByDayPointOut]
+    by_day_region: list[AnalyticsByDayRegionPointOut]
     refuel_sources: list[AnalyticsRefuelSourceSliceOut]
     refuel_channels: list[AnalyticsRefuelChannelSliceOut]
     recent_records: list[AnalyticsRecentRecordOut]

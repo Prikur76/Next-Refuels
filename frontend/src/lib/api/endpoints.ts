@@ -62,6 +62,7 @@ export async function getSummary(filters: {
   region?: string;
   employee?: string;
   car_id?: number;
+  car_state_number?: string;
   source?: string;
 }): Promise<SummaryOut> {
   const params = new URLSearchParams();
@@ -71,6 +72,9 @@ export async function getSummary(filters: {
   if (filters.region) params.set("region", filters.region);
   if (filters.employee) params.set("employee", filters.employee);
   if (filters.car_id) params.set("car_id", String(filters.car_id));
+  if (filters.car_state_number) {
+    params.set("car_state_number", filters.car_state_number);
+  }
   if (filters.source) params.set("source", filters.source);
 
   return apiFetchJson<SummaryOut>(
@@ -100,6 +104,7 @@ export async function getFuelRecords(filters: {
   region?: string;
   employee?: string;
   car_id?: number;
+  car_state_number?: string;
   source?: string;
   cursor?: string;
   offset?: number;
@@ -112,6 +117,9 @@ export async function getFuelRecords(filters: {
   if (filters.region) params.set("region", filters.region);
   if (filters.employee) params.set("employee", filters.employee);
   if (filters.car_id) params.set("car_id", String(filters.car_id));
+  if (filters.car_state_number) {
+    params.set("car_state_number", filters.car_state_number);
+  }
   if (filters.source) params.set("source", filters.source);
   if (filters.cursor) params.set("cursor", filters.cursor);
   params.set("offset", String(filters.offset ?? 0));

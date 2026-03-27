@@ -112,8 +112,14 @@ python manage.py test --noinput -v 1
 1. На сервере: `git clone` (или перенос репозитория), каталог проекта с
    кодом и `docker-compose.prod.yml`.
 2. Скопировать `.env.example` → `.env`, задать `SECRET_KEY`, `DEBUG=False`,
-   `ALLOWED_HOSTS`, `DATABASE_URL` на рабочую PostgreSQL, все секреты
-   интеграций, при необходимости `TELEGRAM_ALERT_CHAT_ID`.
+   `DOMAIN`, `ALLOWED_HOSTS`, `EXTRA_ALLOWED_HOSTS`, `DATABASE_URL` на
+   рабочую PostgreSQL, все секреты интеграций, при необходимости
+   `TELEGRAM_ALERT_CHAT_ID`.
+   - В `docker-compose.prod.yml` `ALLOWED_HOSTS` переопределяется через
+     `${DOMAIN},localhost,127.0.0.1,web`.
+   - Для дополнительных внешних host (например apex-домен и IP) используйте
+     `EXTRA_ALLOWED_HOSTS`, например:
+     `EXTRA_ALLOWED_HOSTS=txnxt.ru,147.45.249.196`.
 3. `docker compose -f docker-compose.prod.yml up -d --build` (или ваш
    `deploy.sh`).
 4. Проверить контейнеры (см. `docker-compose.prod.yml`), например:

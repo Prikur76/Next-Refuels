@@ -38,6 +38,7 @@ def _build_filtered_queryset(request: HttpRequest):
     region = request.GET.get("region")
     employee = request.GET.get("employee")
     car_id = request.GET.get("car_id")
+    car_state_number = request.GET.get("car_state_number")
     source = request.GET.get("source")
 
     if from_date:
@@ -63,6 +64,10 @@ def _build_filtered_queryset(request: HttpRequest):
             )
     if car_id:
         qs = qs.filter(car_id=int(car_id))
+    if car_state_number:
+        car_state_number_value = car_state_number.strip()
+        if car_state_number_value:
+            qs = qs.filter(car__state_number__icontains=car_state_number_value)
     if source:
         qs = qs.filter(source=source)
     return qs
