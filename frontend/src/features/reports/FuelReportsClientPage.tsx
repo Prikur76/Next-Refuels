@@ -122,8 +122,8 @@ function sortJournalItems(
 
 const SOURCE_LABELS: Record<string, string> = {
   TGBOT: "ТГ-бот",
-  CARD: "Топливная карта",
-  TRUCK: "Топливозаправщик",
+  CARD: "Карта",
+  TRUCK: "ТЗ",
 };
 
 function sourceLabel(value: string): string {
@@ -1032,7 +1032,7 @@ export function FuelReportsClientPage({
                   <tbody>
                     {sortedJournalItems.map((item) => (
                       <tr key={item.id}>
-                        <td className="mono">{formatIntegerRu(item.id)}</td>
+                        <td className="mono">{item.id}</td>
                         <td className={fuelTankerPlateClass(item.car_is_fuel_tanker)}>
                           {renderCarPlateWithBadge(
                             item.car_state_number,
