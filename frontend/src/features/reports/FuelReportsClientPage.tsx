@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Download, FileSpreadsheet } from "lucide-react";
 
@@ -417,15 +417,32 @@ function JournalPaginationBar(props: {
 
 export function FuelReportsClientPage({
   embedded = false,
+  sharedFilters,
+  onSharedFiltersChange,
 }: {
   embedded?: boolean;
+  sharedFilters?: {
+    startDate: string;
+    endDate: string;
+    regionId: string;
+    presetId: ReportsDatePresetId | "";
+  };
+  onSharedFiltersChange?: (filters: {
+    startDate: string;
+    endDate: string;
+    regionId: string;
+    presetId: ReportsDatePresetId | "";
+  }) => void;
 }) {
-  const [fromDate, setFromDate] = useState(todayIso());
-  const [toDate, setToDate] = useState(todayIso());
+  const [fromDate, setFromDate] = useState(sharedFilters?.startDate ?? todayIso());
+  const [toDate, setToDate] = useState(sharedFilters?.endDate ?? todayIso());
   const [source, setSource] = useState<string>("");
   const [employee, setEmployee] = useState<string>("");
   const [carStateNumber, setCarStateNumber] = useState<string>("");
-  const [regionId, setRegionId] = useState<string>("");
+  const [regionId, setRegionId] = useState<string>(sharedFilters?.regionId ?? "");
+  const [selectedPresetId, setSelectedPresetId] = useState<
+    ReportsDatePresetId | ""
+  >(sharedFilters?.presetId ?? "");
   const [limit, setLimit] = useState<number>(25);
   const [offset, setOffset] = useState<number>(0);
   const [queryNonce, setQueryNonce] = useState<number>(0);
@@ -434,6 +451,34 @@ export function FuelReportsClientPage({
   const [isExportingCsv, setIsExportingCsv] = useState<boolean>(false);
   const [isExportingXlsx, setIsExportingXlsx] = useState<boolean>(false);
   const [exportFeedback, setExportFeedback] = useState<string>("");
+
+  useEffect(() => {
+    if (!sharedFilters) {
+      return;
+    }
+    setFromDate(sharedFilters.startDate);
+    setToDate(sharedFilters.endDate);
+    setRegionId(sharedFilters.regionId);
+    setSelectedPresetId(sharedFilters.presetId);
+  }, [sharedFilters]);
+
+  useEffect(() => {
+    if (!onSharedFiltersChange) {
+      return;
+    }
+    onSharedFiltersChange({
+      startDate: fromDate,
+      endDate: toDate,
+      regionId,
+      presetId: selectedPresetId,
+    });
+  }, [
+    toDate,
+    fromDate,
+    onSharedFiltersChange,
+    regionId,
+    selectedPresetId,
+  ]);
 
   const regionIdValue = useMemo<number | undefined>(() => {
     const trimmed = regionId.trim();
@@ -606,7 +651,10 @@ export function FuelReportsClientPage({
                 className="input-app"
                 type="date"
                 value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  setSelectedPresetId("");
+                }}
               />
             </label>
             <label className="label-app">
@@ -615,7 +663,10 @@ export function FuelReportsClientPage({
                 className="input-app"
                 type="date"
                 value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  setSelectedPresetId("");
+                }}
               />
             </label>
             <label className="label-app">
@@ -662,7 +713,9 @@ export function FuelReportsClientPage({
               <ResponsiveSelect
                 ariaLabel="Регион"
                 value={regionId}
-                onChange={(v) => setRegionId(v)}
+                onChange={(v) => {
+                  setRegionId(v);
+                }}
                 options={[
                   { value: "", label: "Все" },
                   ...(regionsQuery.data ?? []).map((item) => ({
@@ -715,6 +768,7 @@ export function FuelReportsClientPage({
                       const { start, end } = rangeForReportsPreset(p.id);
                       setFromDate(start);
                       setToDate(end);
+                      setSelectedPresetId(p.id);
                       setOffset(0);
                     }}
                   >

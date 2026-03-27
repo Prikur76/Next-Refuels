@@ -63,17 +63,17 @@ function roleLabel(role: AccessRole): string {
 
 export function AccessClientPage() {
   const meQuery = useMeQuery();
-  const groups = meQuery.data?.groups ?? [];
 
   const isDesktop = useMediaQueryMinWidth(920);
 
   const access = useMemo(() => {
+    const groups = meQuery.data?.groups ?? [];
     const isAdmin = groups.includes("Администратор");
     const isManager = groups.includes("Менеджер");
     const isFueler = groups.includes("Заправщик");
     const canManageAccess = isAdmin || isManager;
     return { isAdmin, isManager, isFueler, canManageAccess };
-  }, [groups]);
+  }, [meQuery.data?.groups]);
 
   const [showAllUsers, setShowAllUsers] = useState(false);
   const [usersRegionFilter, setUsersRegionFilter] = useState<string>("");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
@@ -69,8 +70,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarPreferenceLoaded, setIsSidebarPreferenceLoaded] = useState(false);
   const meQuery = useMeQuery({ enabled: !isLoginPage });
-  const groups = meQuery.data?.groups ?? [];
-
   useEffect(() => {
     if (isPublicPage) {
       return;
@@ -144,6 +143,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [isSidebarCollapsed, isSidebarPreferenceLoaded]);
 
   const access = useMemo(() => {
+    const groups = meQuery.data?.groups ?? [];
     const isAdmin = groups.includes("Администратор");
     const isManager = groups.includes("Менеджер");
     const isFueler = groups.includes("Заправщик");
@@ -155,7 +155,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       isAdmin,
       isFueler,
     };
-  }, [groups]);
+  }, [meQuery.data?.groups]);
 
   const djangoAdminUrl = useMemo(() => {
     const raw = process.env.NEXT_PUBLIC_DJANGO_ADMIN_URL;
@@ -306,10 +306,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 style={{ textDecoration: "none", color: "inherit" }}
               >
                 <div className="sidebar-brand-row">
-                  <img
+                  <Image
                     src="/logo.png"
                     alt="Next-Refuels"
                     className="sidebar-logo"
+                    width={40}
+                    height={40}
                   />
                   <div className="sidebar-brand-text">
                     <div className="text-sm font-bold">Next-Refuels</div>

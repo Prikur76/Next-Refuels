@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -61,6 +61,10 @@ const ANALYTICS_DATE_PRESETS: readonly {
   { id: "last30", label: "30 дней" },
   { id: "monthToDate", label: "Месяц" },
 ] as const;
+
+function isAnalyticsPresetId(value: string): value is AnalyticsDatePresetId {
+  return ANALYTICS_DATE_PRESETS.some((item) => item.id === value);
+}
 
 function localYmdToIso(y: number, monthIndex: number, day: number): string {
   const m = String(monthIndex + 1).padStart(2, "0");
@@ -322,12 +326,78 @@ export default function AnalyticsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [startDate, setStartDate] = useState<string>(todayIso());
-  const [endDate, setEndDate] = useState<string>(todayIso());
-  const [regionId, setRegionId] = useState<string>("");
+  const sharedStartDateFromQuery = searchParams.get("shared_start_date");
+  const sharedEndDateFromQuery = searchParams.get("shared_end_date");
+  const sharedRegionIdFromQuery = searchParams.get("shared_region_id");
+  const sharedPresetFromQuery = searchParams.get("shared_preset");
+
+  const [startDate, setStartDate] = useState<string>(
+    sharedStartDateFromQuery?.trim() || todayIso(),
+  );
+  const [endDate, setEndDate] = useState<string>(
+    sharedEndDateFromQuery?.trim() || todayIso(),
+  );
+  const [regionId, setRegionId] = useState<string>(
+    sharedRegionIdFromQuery?.trim() || "",
+  );
+  const [selectedPresetId, setSelectedPresetId] = useState<
+    AnalyticsDatePresetId | ""
+  >(
+    sharedPresetFromQuery && isAnalyticsPresetId(sharedPresetFromQuery)
+      ? sharedPresetFromQuery
+      : "",
+  );
 
   const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
   const [exportFeedback, setExportFeedback] = useState<string>("");
+  const [isRecentTransactionsCollapsed, setIsRecentTransactionsCollapsed] =
+    useState<boolean>(false);
+
+  useEffect(() => {
+    const nextStart = sharedStartDateFromQuery?.trim() || todayIso();
+    const nextEnd = sharedEndDateFromQuery?.trim() || todayIso();
+    const nextRegion = sharedRegionIdFromQuery?.trim() || "";
+    const nextPreset =
+      sharedPresetFromQuery && isAnalyticsPresetId(sharedPresetFromQuery)
+        ? sharedPresetFromQuery
+        : "";
+
+    setStartDate(nextStart);
+    setEndDate(nextEnd);
+    setRegionId(nextRegion);
+    setSelectedPresetId(nextPreset);
+  }, [
+    sharedEndDateFromQuery,
+    sharedPresetFromQuery,
+    sharedRegionIdFromQuery,
+    sharedStartDateFromQuery,
+  ]);
+
+  function replaceSharedFilterParams(next: {
+    startDate: string;
+    endDate: string;
+    regionId: string;
+    presetId: AnalyticsDatePresetId | "";
+  }): void {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("shared_start_date", next.startDate);
+    params.set("shared_end_date", next.endDate);
+    if (next.regionId.trim()) {
+      params.set("shared_region_id", next.regionId.trim());
+    } else {
+      params.delete("shared_region_id");
+    }
+    if (next.presetId) {
+      params.set("shared_preset", next.presetId);
+    } else {
+      params.delete("shared_preset");
+    }
+    const query = params.toString();
+    if (query === searchParams.toString()) {
+      return;
+    }
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }
 
   const regionIdValue = useMemo<number | null>(() => {
     const trimmed = regionId.trim();
@@ -422,6 +492,8 @@ export default function AnalyticsPage() {
     } else {
       params.set("view", "journal");
     }
+    params.delete("source");
+    params.delete("car_state_number");
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname);
   }
@@ -591,7 +663,27 @@ export default function AnalyticsPage() {
         {viewTabs}
         {activeView === "journal" ? (
           <div className="mt-3 md:mt-4">
-            <FuelReportsClientPage embedded />
+            <FuelReportsClientPage
+              embedded
+              sharedFilters={{
+                startDate,
+                endDate,
+                regionId,
+                presetId: selectedPresetId,
+              }}
+              onSharedFiltersChange={(filters) => {
+                setStartDate(filters.startDate);
+                setEndDate(filters.endDate);
+                setRegionId(filters.regionId);
+                setSelectedPresetId(filters.presetId);
+                replaceSharedFilterParams({
+                  startDate: filters.startDate,
+                  endDate: filters.endDate,
+                  regionId: filters.regionId,
+                  presetId: filters.presetId,
+                });
+              }}
+            />
           </div>
         ) : (
           <>
@@ -603,7 +695,17 @@ export default function AnalyticsPage() {
                 className="input-app"
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => {
+                  const nextStartDate = e.target.value;
+                  setStartDate(nextStartDate);
+                  setSelectedPresetId("");
+                  replaceSharedFilterParams({
+                    startDate: nextStartDate,
+                    endDate,
+                    regionId,
+                    presetId: "",
+                  });
+                }}
               />
             </label>
             <label className="label-app">
@@ -612,7 +714,17 @@ export default function AnalyticsPage() {
                 className="input-app"
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => {
+                  const nextEndDate = e.target.value;
+                  setEndDate(nextEndDate);
+                  setSelectedPresetId("");
+                  replaceSharedFilterParams({
+                    startDate,
+                    endDate: nextEndDate,
+                    regionId,
+                    presetId: "",
+                  });
+                }}
               />
             </label>
             <label className="label-app">
@@ -620,7 +732,15 @@ export default function AnalyticsPage() {
               <ResponsiveSelect
                 ariaLabel="Регион"
                 value={regionId}
-                onChange={(v) => setRegionId(v)}
+                onChange={(v) => {
+                  setRegionId(v);
+                  replaceSharedFilterParams({
+                    startDate,
+                    endDate,
+                    regionId: v,
+                    presetId: selectedPresetId,
+                  });
+                }}
                 options={[
                   { value: "", label: "Все" },
                   ...(regionsQuery.data ?? []).map((r) => ({
@@ -657,6 +777,13 @@ export default function AnalyticsPage() {
                       const { start, end } = rangeForAnalyticsPreset(p.id);
                       setStartDate(start);
                       setEndDate(end);
+                      setSelectedPresetId(p.id);
+                      replaceSharedFilterParams({
+                        startDate: start,
+                        endDate: end,
+                        regionId,
+                        presetId: p.id,
+                      });
                     }}
                   >
                     {p.label}
@@ -1151,60 +1278,84 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="mt-3 card p-3 sm:p-4 md:mt-4">
-          <div className="text-sm font-semibold">Последние транзакции</div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold">Последние транзакции</div>
+            <button
+              type="button"
+              className="rounded-lg border border-[var(--border)] bg-[var(--surface-0)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition-colors hover:border-[color-mix(in_srgb,var(--primary)_25%,var(--border))]"
+              aria-expanded={!isRecentTransactionsCollapsed}
+              aria-controls="recent-transactions-content"
+              onClick={() =>
+                setIsRecentTransactionsCollapsed((prev) => !prev)
+              }
+            >
+              {isRecentTransactionsCollapsed ? "Развернуть" : "Свернуть"}
+            </button>
+          </div>
 
-          {statsQuery.isPending ? (
+          {!isRecentTransactionsCollapsed ? (
+            <div id="recent-transactions-content">
+              {statsQuery.isPending ? (
             <div className="mt-3 space-y-2">
               {Array.from({ length: 6 }).map((_, idx) => (
                 <SkeletonLine key={idx} height={14} width="100%" />
               ))}
             </div>
-          ) : recent.length ? (
-            <>
-              <div className="mt-3 space-y-3 lg:hidden">
-                {recent.map((item, idx) => (
-                  <RecentTransactionMobileCard
-                    key={`${item.filled_at}-${idx}`}
-                    item={item}
-                  />
-                ))}
-              </div>
-              <div className="mt-3 hidden min-w-0 overflow-x-auto lg:block">
-                <table className="table-app">
-                  <thead>
-                    <tr>
-                      <th>Дата</th>
-                      <th>Сотрудник</th>
-                      <th>Автомобиль</th>
-                      <th>Регион</th>
-                      <th>Тип топлива</th>
-                      <th>Объем</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              ) : recent.length ? (
+                <>
+                  <div className="mt-3 space-y-3 lg:hidden">
                     {recent.map((item, idx) => (
-                      <tr key={`${item.filled_at}-${idx}`}>
-                        <td className="mono">
-                          {formatLocalDateTime(item.filled_at)}
-                        </td>
-                        <td>{item.employee_name}</td>
-                        <td className={fuelTankerPlateClass(item.car_is_fuel_tanker)}>
-                          {renderCarPlateWithBadge(item.car, item.car_is_fuel_tanker)}
-                        </td>
-                        <td>{item.region_name ?? "—"}</td>
-                        <td>{item.fuel_type_label}</td>
-                        <td>{formatDecimal(item.liters)}</td>
-                      </tr>
+                      <RecentTransactionMobileCard
+                        key={`${item.filled_at}-${idx}`}
+                        item={item}
+                      />
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : (
-            <div className="mt-3 text-sm text-[var(--muted)]">
-              Нет записей за выбранный период.
+                  </div>
+                  <div className="mt-3 hidden min-w-0 overflow-x-auto lg:block">
+                    <table className="table-app">
+                      <thead>
+                        <tr>
+                          <th>Дата</th>
+                          <th>Сотрудник</th>
+                          <th>Автомобиль</th>
+                          <th>Регион</th>
+                          <th>Тип топлива</th>
+                          <th>Объем</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recent.map((item, idx) => (
+                          <tr key={`${item.filled_at}-${idx}`}>
+                            <td className="mono">
+                              {formatLocalDateTime(item.filled_at)}
+                            </td>
+                            <td>{item.employee_name}</td>
+                            <td
+                              className={fuelTankerPlateClass(
+                                item.car_is_fuel_tanker,
+                              )}
+                            >
+                              {renderCarPlateWithBadge(
+                                item.car,
+                                item.car_is_fuel_tanker,
+                              )}
+                            </td>
+                            <td>{item.region_name ?? "—"}</td>
+                            <td>{item.fuel_type_label}</td>
+                            <td>{formatDecimal(item.liters)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-3 text-sm text-[var(--muted)]">
+                  Нет записей за выбранный период.
+                </div>
+              )}
             </div>
-          )}
+          ) : null}
         </div>
           </>
         )}

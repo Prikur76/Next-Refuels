@@ -81,9 +81,9 @@ function HomeTileIcon({ kind }: { kind: "fuel" | "analytics" | "access" }) {
 
 export default function HomePage() {
   const meQuery = useMeQuery({ enabled: true });
-  const groups = meQuery.data?.groups ?? [];
 
   const links = useMemo(() => {
+    const groups = meQuery.data?.groups ?? [];
     const isAdmin = groups.includes("Администратор");
     const isManager = groups.includes("Менеджер");
     const isFueler = groups.includes("Заправщик");
@@ -133,7 +133,7 @@ export default function HomePage() {
     }
 
     return items;
-  }, [groups]);
+  }, [meQuery.data?.groups]);
 
   return (
     <div className="page-wrap">
