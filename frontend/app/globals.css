@@ -610,9 +610,127 @@ select.input-app option {
   gap: 12px;
 }
 
+.home-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 96px;
+  border-radius: 14px;
+  border: 1px solid #d6deea;
+  background: #f7f9fc;
+  padding: 14px 16px;
+  color: #112235;
+  text-decoration: none;
+  box-shadow: 0 1px 0 rgba(17, 34, 53, 0.03), 0 4px 16px rgba(17, 34, 53, 0.05);
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.home-tile:hover {
+  border-color: #b9c9e1;
+  box-shadow: 0 8px 24px rgba(17, 34, 53, 0.1);
+  transform: translateY(-1px);
+}
+
+.home-tile:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 42%, transparent);
+  outline-offset: 2px;
+}
+
+.home-tile:active {
+  transform: translateY(1px);
+}
+
+.home-tile-title {
+  display: block;
+  width: 100%;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.home-tile-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.home-tile-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #24354d;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+
+.home-tile-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.home-tile-hint {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(17, 34, 53, 0.74);
+  line-height: 1.2;
+}
+
+.home-tile-brand {
+  border-color: #9bbdfc;
+  background: linear-gradient(140deg, #edf3ff 0%, #dde9ff 100%);
+}
+
+.home-tile-violet {
+  border-color: #c8c1f5;
+  background: linear-gradient(140deg, #f3f0ff 0%, #e8e1ff 100%);
+}
+
+.home-tile-teal {
+  border-color: #a9d9d4;
+  background: linear-gradient(140deg, #e9f9f7 0%, #d7f1ed 100%);
+}
+
+.home-tile-brand .home-tile-title {
+  color: #1a2f63;
+}
+
+.home-tile-violet .home-tile-title {
+  color: #34275e;
+}
+
+.home-tile-teal .home-tile-title {
+  color: #104247;
+}
+
+.home-tile-wide {
+  grid-column: span 1;
+}
+
 @container app (min-width: 520px) {
   .home-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-tile {
+    min-height: 104px;
+    grid-column: span 1;
+  }
+
+  .home-tile-wide {
+    grid-column: span 1;
+  }
+}
+
+@container app (min-width: 860px) {
+  .home-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
