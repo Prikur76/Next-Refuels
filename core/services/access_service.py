@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
@@ -182,6 +183,12 @@ class UserAccessService:
         return user, generated_password
 
     @staticmethod
+    def _invalidate_bot_user_cache(target: User) -> None:
+        if not target.telegram_id:
+            return
+        cache.delete(f"bot_user:{target.telegram_id}")
+
+    @staticmethod
     @transaction.atomic
     def set_active(actor: User, target_id: int, is_active: bool) -> User:
         UserAccessService._ensure_manager_or_admin(actor)
@@ -198,6 +205,7 @@ class UserAccessService:
 
         target.is_active = is_active
         target.save(update_fields=["is_active"])
+        UserAccessService._invalidate_bot_user_cache(target)
         return target
 
     @staticmethod

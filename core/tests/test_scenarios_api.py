@@ -64,6 +64,18 @@ class HealthAndAuthScenariosTests(TestCase):
         payload = resp.json()
         self.assertIn("Менеджер", payload["groups"])
         self.assertEqual(payload["must_change_password"], False)
+        self.assertEqual(payload["telegram_linked"], False)
+
+    def test_auth_me_returns_telegram_linked_when_user_has_telegram_id(self):
+        self.manager.telegram_id = 123456789
+        self.manager.save(update_fields=["telegram_id"])
+        login_client(
+            self.client, username=self.manager.username, password="pass12345"
+        )
+        resp = self.client.get("/api/v1/auth/me")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertEqual(payload["telegram_linked"], True)
 
     def test_auth_telegram_link_code_requires_input_role(self):
         self.client.logout()

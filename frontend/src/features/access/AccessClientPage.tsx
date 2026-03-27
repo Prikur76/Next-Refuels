@@ -9,7 +9,6 @@ import { SkeletonLine } from "@/components/skeleton/Skeleton";
 import { ResponsiveSelect } from "@/components/select/ResponsiveSelect";
 import { useMediaQueryMinWidth } from "@/hooks/useMediaQueryMinWidth";
 import {
-  createTelegramLinkCode,
   createAccessUser,
   getAccessRegions,
   getAccessEvents,
@@ -25,7 +24,6 @@ import type {
   AccessUserCreateIn,
   AccessUserOut,
   RegionOut,
-  TelegramLinkCodeOut,
 } from "@/lib/api/types";
 
 type AccessFormState = {
@@ -121,9 +119,6 @@ export function AccessClientPage() {
   const [msg, setMsg] = useState<string>("");
   const [createUserFeedback, setCreateUserFeedback] = useState<string>("");
   const [editUserFeedback, setEditUserFeedback] = useState<string>("");
-  const [telegramLinkCode, setTelegramLinkCode] =
-    useState<TelegramLinkCodeOut | null>(null);
-  const [copyStatus, setCopyStatus] = useState<string>("");
   const [createCredentialsText, setCreateCredentialsText] = useState<string>("");
   const [createCredentialsCopyStatus, setCreateCredentialsCopyStatus] =
     useState<string>("");
@@ -131,7 +126,6 @@ export function AccessClientPage() {
   const [editCredentialsCopyStatus, setEditCredentialsCopyStatus] =
     useState<string>("");
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
-  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
   const [isAccessEventsExpanded, setIsAccessEventsExpanded] = useState(false);
 
   function validateEditForm(payload: EditFormState): EditFormErrors {
@@ -149,13 +143,6 @@ export function AccessClientPage() {
       errors.phone = "Укажите телефон.";
     }
     return errors;
-  }
-
-  function setCopyStatusWithAutoClear(message: string): void {
-    setCopyStatus(message);
-    window.setTimeout(() => {
-      setCopyStatus("");
-    }, 4000);
   }
 
   function setCreateCredentialsCopyStatusWithAutoClear(message: string): void {
@@ -275,18 +262,6 @@ export function AccessClientPage() {
     },
   });
 
-  const createTelegramLinkCodeMutation = useMutation({
-    mutationFn: createTelegramLinkCode,
-    onSuccess: (payload) => {
-      setTelegramLinkCode(payload);
-      setMsg("");
-      setCopyStatus("");
-    },
-    onError: (err) => {
-      setMsg((err as Error).message || "Не удалось создать код привязки.");
-    },
-  });
-
   const updatePasswordMutation = useMutation({
     mutationFn: async (args: { userId: number; generateTemporary: boolean }) =>
       updateAccessUserPassword(args.userId, {
@@ -399,12 +374,14 @@ export function AccessClientPage() {
     <div className="page-wrap">
       <section className="card p-4">
         <h1 className="section-title">
-          {access.canManageAccess ? "Управление доступом" : "Привязка Telegram"}
+          {access.canManageAccess
+            ? "Управление доступом"
+            : "Управление доступом недоступно"}
         </h1>
         <p className="section-subtitle mt-1">
           {access.canManageAccess
             ? "Создавайте пользователей и управляйте правами."
-            : "Подключите бота к вашей учетной записи."}
+            : "Этот раздел доступен только менеджерам и администраторам."}
         </p>
 
         <div className="mt-4">
@@ -413,40 +390,19 @@ export function AccessClientPage() {
           ) : null}
         </div>
 
-        <div className="mt-3 card p-3 md:p-4">
-          <button
-            type="button"
-            className="w-full rounded-xl border border-transparent p-2 text-left transition hover:border-[var(--border)] hover:bg-[var(--surface-2)]"
-            onClick={() => setIsTelegramModalOpen(true)}
-            aria-label="Открыть форму привязки Telegram"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface-1)] md:h-8 md:w-8"
-                  aria-hidden="true"
-                >
-                  <Check size={16} />
-                </span>
-                <h2 className="text-sm font-semibold leading-tight">
-                  <span className="md:hidden">Telegram</span>
-                  <span className="hidden md:inline">Привязка Telegram</span>
-                </h2>
+        {!access.canManageAccess ? (
+          <div className="mt-3 card p-3 md:p-4">
+            {!meQuery.data?.telegram_linked ? (
+              <a className="btn-app" href="/bot">
+                Перейти к привязке бота
+              </a>
+            ) : (
+              <div className="text-sm text-[var(--muted)]">
+                Telegram уже привязан к вашей учетной записи.
               </div>
-              <span
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface-1)] md:h-8 md:w-8"
-                aria-hidden="true"
-              >
-                <ChevronRight size={16} />
-              </span>
-            </div>
-          </button>
-          {telegramLinkCode ? (
-            <div className="mt-2 text-xs text-[var(--muted)]">
-              Последний код сгенерирован и доступен в модальном окне.
-            </div>
-          ) : null}
-        </div>
+            )}
+          </div>
+        ) : null}
 
         {access.canManageAccess ? (
           <div className="mt-3 card p-3 md:p-4">
@@ -814,106 +770,6 @@ export function AccessClientPage() {
           </div>
         ) : null}
       </section>
-      {isTelegramModalOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            display: "grid",
-            placeItems: "center",
-            zIndex: 50,
-            padding: "1rem",
-          }}
-        >
-          <div className="card p-4" style={{ width: "min(760px, 100%)" }}>
-            <h3 className="text-base font-semibold">Привязка Telegram</h3>
-            <p className="section-subtitle mt-2">
-              Сгенерируйте одноразовый код и отправьте его боту готовой командой.
-            </p>
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              Код создается только для вашей текущей учетной записи.
-            </p>
-            <div className="toolbar mt-3">
-              <button
-                type="button"
-                className="btn-app btn-primary"
-                aria-disabled={createTelegramLinkCodeMutation.isPending}
-                onClick={() => {
-                  createTelegramLinkCodeMutation.mutate();
-                }}
-              >
-                {createTelegramLinkCodeMutation.isPending
-                  ? "Генерация..."
-                  : "Сгенерировать код"}
-              </button>
-            </div>
-            {telegramLinkCode ? (
-              <div className="muted-box mt-3 text-sm">
-                <div>
-                  Код: <span className="mono">{telegramLinkCode.code}</span>
-                </div>
-                <div className="mt-1">
-                  Действителен до:{" "}
-                  <span className="mono">{telegramLinkCode.expires_at}</span>
-                </div>
-                <div className="mt-1">
-                  TTL: <span className="mono">{telegramLinkCode.ttl_minutes}</span>{" "}
-                  мин.
-                </div>
-                <div className="mt-1">
-                  Команда:{" "}
-                  <span className="mono">{`/start ${telegramLinkCode.code}`}</span>
-                </div>
-                <div className="toolbar mt-3">
-                  <button
-                    type="button"
-                    className="btn-app"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(
-                          `/start ${telegramLinkCode.code}`
-                        );
-                        setCopyStatusWithAutoClear("Команда скопирована.");
-                      } catch {
-                        setCopyStatusWithAutoClear(
-                          "Не удалось скопировать автоматически. Скопируйте вручную."
-                        );
-                      }
-                    }}
-                  >
-                    Скопировать команду
-                  </button>
-                  {telegramLinkCode.bot_link_with_start ? (
-                    <a
-                      className="btn-app"
-                      href={telegramLinkCode.bot_link_with_start}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Открыть бота
-                    </a>
-                  ) : null}
-                  {copyStatus ? (
-                    <span className="text-xs text-[var(--muted)]">{copyStatus}</span>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-            <div className="toolbar mt-4">
-              <button
-                type="button"
-                className="btn-app"
-                onClick={() => setIsTelegramModalOpen(false)}
-              >
-                Закрыть
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
       {access.canManageAccess && isCreateUserModalOpen ? (
         <div
           role="dialog"

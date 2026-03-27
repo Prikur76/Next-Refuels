@@ -5,7 +5,11 @@ import Link from "next/link";
 
 import { useMeQuery } from "@/components/auth/useMe";
 
-function HomeTileIcon({ kind }: { kind: "fuel" | "analytics" | "access" }) {
+function HomeTileIcon({
+  kind,
+}: {
+  kind: "fuel" | "analytics" | "access" | "bot";
+}) {
   if (kind === "fuel") {
     return (
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -59,6 +63,27 @@ function HomeTileIcon({ kind }: { kind: "fuel" | "analytics" | "access" }) {
     );
   }
 
+  if (kind === "bot") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M9.5 8.75a3.25 3.25 0 0 1 4.6 0l.9.9a3.25 3.25 0 0 1 0 4.6l-1.6 1.6"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M14.5 15.25a3.25 3.25 0 0 1-4.6 0l-.9-.9a3.25 3.25 0 0 1 0-4.6l1.6-1.6"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
@@ -94,7 +119,7 @@ export default function HomePage() {
       label: string;
       hint: string;
       tone: "brand" | "violet" | "teal";
-      icon: "fuel" | "analytics" | "access";
+      icon: "fuel" | "analytics" | "access" | "bot";
       size: "regular" | "wide";
     }> = [
       {
@@ -120,7 +145,7 @@ export default function HomePage() {
       });
     }
 
-    if (isManager || isAdmin || isFueler) {
+    if (isManager || isAdmin) {
       items.push({
         key: "access",
         href: "/access",
@@ -132,8 +157,20 @@ export default function HomePage() {
       });
     }
 
+    if ((isManager || isAdmin || isFueler) && !meQuery.data?.telegram_linked) {
+      items.push({
+        key: "bot-link",
+        href: "/bot",
+        label: "Бот",
+        hint: "Привязка Telegram",
+        tone: "teal",
+        icon: "bot",
+        size: "regular",
+      });
+    }
+
     return items;
-  }, [meQuery.data?.groups]);
+  }, [meQuery.data?.groups, meQuery.data?.telegram_linked]);
 
   return (
     <div className="page-wrap">

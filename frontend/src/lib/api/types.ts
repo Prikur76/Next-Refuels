@@ -12,6 +12,7 @@ export interface UserMeOut {
   auth_provider: string;
   mfa_policy_enabled: boolean;
   must_change_password: boolean;
+  telegram_linked: boolean;
 }
 
 export interface TelegramLinkCodeOut {

@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Droplets,
   Home,
+  Link2,
   LogOut,
   Settings,
   Shield,
@@ -150,7 +151,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return {
       hasReportsAccess: isManager || isAdmin,
       hasAccessAdmin: isManager || isAdmin,
-      hasAccessPage: isManager || isAdmin || isFueler,
+      hasAccessPage: isManager || isAdmin,
+      shouldShowBotLink: isFueler || isManager || isAdmin,
       isManager,
       isAdmin,
       isFueler,
@@ -210,9 +212,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         });
       }
 
+      if (access.shouldShowBotLink && !meQuery.data?.telegram_linked) {
+        items.push({
+          key: "bot-link",
+          href: "/bot",
+          label: "Бот",
+          icon: <Link2 size={18} />,
+        });
+      }
+
       return items;
     },
-    [access.hasAccessPage, access.hasReportsAccess, access.isAdmin, djangoAdminUrl]
+    [
+      access.hasAccessPage,
+      access.hasReportsAccess,
+      access.isAdmin,
+      access.shouldShowBotLink,
+      djangoAdminUrl,
+      meQuery.data?.telegram_linked,
+    ]
   );
 
   const activeKey = navItems

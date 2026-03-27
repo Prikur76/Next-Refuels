@@ -27,9 +27,11 @@
 - `core/tests/test_api.py`: smoke по `POST /api/v1/fuel-records` и
   `GET /api/v1/cars`;
 - `core/tests/test_access_api.py`: RBAC/доступ и управление
-  паролями в `access-management` API;
+  паролями в `access-management` API, включая очистку bot-кэша при
+  смене `is_active`;
 - `core/tests/test_scenarios_api.py`: сценарии `auth`, `cars`,
-  `fuel-records`, `reports/*` и `analytics/*`;
+  `fuel-records`, `reports/*` и `analytics/*`, включая `telegram_linked`
+  в `auth/me`;
 - `core/tests/test_export_and_commands.py`:
   экспорт (CSV/XLSX) и `management commands` (`runbot`,
   `sync_cars_with_element`).
@@ -44,6 +46,16 @@
   `reports/*`, но не может выполнять действия уровня “другого”
   региона в access-management API.
 - Проверить, что `Администратор` имеет глобальный охват.
+- Проверить ответ `GET /api/v1/auth/me`:
+  - при `telegram_id is null` возвращается `telegram_linked=false`;
+  - при заполненном `telegram_id` возвращается `telegram_linked=true`.
+
+### 1.1 Навигация (desktop + mobile)
+
+- `Заправщик` без привязки: видит пункт `Бот`, не видит пункт `Доступ`.
+- `Заправщик` с привязкой: не видит `Бот`, не видит `Доступ`.
+- `Менеджер`/`Администратор` без привязки: видят `Доступ` и `Бот`.
+- `Менеджер`/`Администратор` с привязкой: видят `Доступ`, не видят `Бот`.
 
 ### 2. Валидация входных данных
 
@@ -63,6 +75,8 @@
 - Привязка Telegram аккаунта по коду из `/start <code>`.
 - Ввод последовательности: госномер -> литры -> способ.
 - Отказ при попытке начать сценарий без привязки/прав.
+- Смена `is_active` в access-management API должна сразу влиять на доступ
+  в боте (без ожидания TTL кэша `bot_user:<telegram_id>`).
 
 **Автотесты:** в `core/tests/test_export_and_commands.py` тест
 `test_runbot_calls_run_bot` проверяет, что `manage.py runbot` вызывает

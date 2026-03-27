@@ -339,6 +339,12 @@
   - логин;
   - ввод заправки;
   - просмотр отчета.
+- Проверить RBAC-навигацию:
+  - у роли `Заправщик` нет пункта `Доступ`;
+  - кнопка `Бот` показывается только если Telegram не привязан.
+- Проверить реактивацию пользователя:
+  - при `is_active=false -> true` и наличии `telegram_id` доступ через
+    Telegram-бот восстанавливается сразу (без ожидания 15 минут).
 - Если есть инцидент:
   - `docker compose -f docker-compose.prod.yml logs --tail=200 web`
   - `docker compose -f docker-compose.prod.yml logs --tail=200 nginx`

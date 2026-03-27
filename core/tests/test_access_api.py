@@ -1,6 +1,7 @@
 # mypy: ignore-errors
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.cache import cache
 from django.test import Client, TestCase
 from phonenumber_field.phonenumber import to_python
 
@@ -249,4 +250,19 @@ class AccessApiTests(TestCase):
             self.target_in_scope.phone,
             to_python("+79001112233"),
         )
+
+    def test_set_active_invalidates_bot_cache(self):
+        self.target_in_scope.telegram_id = 555123777
+        self.target_in_scope.save(update_fields=["telegram_id"])
+        cache_key = f"bot_user:{self.target_in_scope.telegram_id}"
+        cache.set(cache_key, {"id": self.target_in_scope.id}, timeout=600)
+        self.assertIsNotNone(cache.get(cache_key))
+
+        response = self.client.patch(
+            f"/api/v1/access/users/{self.target_in_scope.id}",
+            data={"is_active": False},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(cache.get(cache_key))
 

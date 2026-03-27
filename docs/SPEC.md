@@ -213,12 +213,17 @@ DROP TABLE IF EXISTS public.__perm_test;
 - `/` - главная страница;
 - `/fuel/add/` - добавление заправки;
 - `/fuel/reports/` - отчеты;
+- `/access` - управление доступом (только менеджер/администратор);
+- `/bot` - привязка Telegram-бота (показывается в навигации только при
+  отсутствии привязки);
 - `/health/` - health-check JSON;
 - `/admin/` - административный интерфейс.
 
 ### API v1 (клиент Next.js и backend)
 
-- `/api/v1/auth/me` - профиль текущего пользователя;
+- `/api/v1/auth/me` - профиль текущего пользователя (включая
+  `telegram_linked`);
+- `/api/v1/auth/telegram/link-code` - выдача одноразового кода привязки Telegram;
 - `/api/v1/cars` - поиск активных автомобилей;
 - `/api/v1/fuel-records` - создание записи заправки;
 - `/api/v1/fuel-records/recent` - последние записи;
@@ -303,5 +308,17 @@ DROP TABLE IF EXISTS public.__perm_test;
 - Добавлен аудит access-событий и endpoint
   `/api/v1/reports/access-events`.
 - В веб-клиенте добавлен раздел `Доступ` для менеджеров/админов.
+- В веб-клиенте добавлен маршрут `/bot` для self-service привязки Telegram.
+- В API `GET /api/v1/auth/me` добавлено поле `telegram_linked`:
+  - `true` — Telegram уже привязан к учетной записи;
+  - `false` — привязки нет, в навигации показывается кнопка `Бот`.
+- Правила навигации (desktop + mobile):
+  - `Заправщик`: видит `Бот` только если `telegram_linked=false`, пункт
+    `Доступ` не показывается;
+  - `Менеджер`/`Администратор`: всегда видят `Доступ`, а `Бот` только если
+    `telegram_linked=false`.
+- При смене `is_active` пользователя очищается кэш Telegram middleware
+  (`bot_user:<telegram_id>`), чтобы после реактивации доступ бота
+  восстанавливался без ожидания TTL.
 - Подготовлен SSO-readiness слой (`local` сейчас, `oidc/saml` как следующий
   этап) через abstraction identity provider.

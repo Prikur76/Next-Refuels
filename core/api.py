@@ -54,6 +54,7 @@ class UserMeOut(Schema):
     auth_provider: str
     mfa_policy_enabled: bool
     must_change_password: bool
+    telegram_linked: bool
 
 
 class TelegramLinkCodeOut(Schema):
@@ -337,6 +338,7 @@ def auth_me(request: HttpRequest):
         auth_provider=settings.AUTH_PROVIDER,
         mfa_policy_enabled=settings.MFA_POLICY_ENABLED,
         must_change_password=request.user.must_change_password,
+        telegram_linked=bool(request.user.telegram_id),
     )
 
 
