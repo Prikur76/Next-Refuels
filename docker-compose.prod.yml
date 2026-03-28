@@ -40,7 +40,7 @@ services:
       DEBUG: "False"
       # Нужны localhost/127.0.0.1/web для внутренних health-check запросов
       # из контейнеров; внешний хост остается ${DOMAIN}.
-      ALLOWED_HOSTS: ${DOMAIN},localhost,127.0.0.1,web
+      ALLOWED_HOSTS: ${DOMAIN},localhost,127.0.0.1,0.0.0.0,web
       CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
       FRONTEND_BASE_URL: https://${DOMAIN}
       SECURE_SSL_REDIRECT: "True"
