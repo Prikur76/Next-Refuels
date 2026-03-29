@@ -18,7 +18,7 @@ from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
 from pydantic import Field
 
-from core.models import Car, FuelRecord, Region, SystemLog
+from core.models import Car, FuelRecord, Region, SystemLog, User
 from core.schemas import (
     AnalyticsByDayPointOut,
     AnalyticsByDayRegionPointOut,
@@ -61,6 +61,7 @@ class UserMeOut(Schema):
     telegram_linked: bool
     has_my_editable_fuel_records: bool = False
     region_id: Optional[int] = None
+    app_timezone: str
 
 
 class TelegramLinkCodeOut(Schema):
@@ -377,6 +378,7 @@ def auth_me(request: HttpRequest, client_tz: Optional[str] = None):
         telegram_linked=bool(request.user.telegram_id),
         has_my_editable_fuel_records=has_mine,
         region_id=request.user.region_id,
+        app_timezone=settings.TIME_ZONE,
     )
 
 
@@ -620,45 +622,52 @@ def reports_filters(
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
 
-    qs = FuelRecord.objects.active_for_reports().with_related_data()
+    qs = FuelRecord.objects.active_for_reports()
     qs = _apply_filled_at_date_range(qs, from_date, to_date)
     if source:
         qs = qs.filter(source=source)
 
-    employees_set: set[str] = set()
-    employees_rows = (
-        qs.filter(employee__isnull=False)
-        .values_list(
-            "employee__first_name",
-            "employee__last_name",
-            "employee__username",
-        )
-        .distinct()
-    )
-    for first_name, last_name, username in employees_rows:
-        full_name = " ".join(
-            part.strip()
-            for part in [first_name or "", last_name or ""]
-            if part and part.strip()
-        ).strip()
-        if full_name:
-            employees_set.add(full_name)
-        elif username:
-            employees_set.add(username)
+    employee_id_set: set[int] = set()
+    historical_region_id_set: set[int] = set()
+    car_region_id_set: set[int] = set()
+    for row in qs.values_list(
+        "employee_id",
+        "historical_region_id",
+        "car__region_id",
+    ).iterator(chunk_size=2048):
+        emp_id, hist_rid, car_rid = row
+        if emp_id is not None:
+            employee_id_set.add(emp_id)
+        if hist_rid is not None:
+            historical_region_id_set.add(hist_rid)
+        if car_rid is not None:
+            car_region_id_set.add(car_rid)
 
-    historical_regions = qs.values_list(
-        "historical_region__name",
-        flat=True,
-    ).distinct()
-    car_regions = qs.values_list(
-        "car__region__name",
-        flat=True,
-    ).distinct()
-    regions_set = {
-        (name or "").strip()
-        for name in list(historical_regions) + list(car_regions)
-        if name and str(name).strip()
-    }
+    employees_set: set[str] = set()
+    if employee_id_set:
+        for first_name, last_name, username in User.objects.filter(
+            pk__in=employee_id_set,
+        ).values_list("first_name", "last_name", "username"):
+            full_name = " ".join(
+                part.strip()
+                for part in [first_name or "", last_name or ""]
+                if part and part.strip()
+            ).strip()
+            if full_name:
+                employees_set.add(full_name)
+            elif username:
+                employees_set.add(username)
+
+    region_pk_set = historical_region_id_set | car_region_id_set
+    regions_set: set[str] = set()
+    if region_pk_set:
+        for name in Region.objects.filter(pk__in=region_pk_set).values_list(
+            "name",
+            flat=True,
+        ):
+            cleaned = (name or "").strip()
+            if cleaned:
+                regions_set.add(cleaned)
 
     return ReportsFiltersOut(
         employees=sorted(employees_set),
@@ -691,7 +700,7 @@ def reports_records(
     qs = (
         FuelRecord.objects.active_for_reports()
         .with_related_data()
-        .order_by("-filled_at")
+        .order_by("-filled_at", "-id")
     )
     qs = _apply_reports_filters(
         qs,
