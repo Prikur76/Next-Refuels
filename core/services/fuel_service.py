@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
@@ -12,6 +14,7 @@ from django.db.models import QuerySet
 from django.utils import timezone
 
 from core.models import Car, FuelRecord
+from core.services.access_service import ROLE_ADMIN, ROLE_FUELER, ROLE_MANAGER
 
 User = get_user_model()
 
@@ -29,6 +32,17 @@ class FuelCreatePayload:
     source: str
     filled_at: datetime | None = None
     notes: str = ""
+
+
+@dataclass(frozen=True)
+class FuelPatchPayload:
+    car_id: int | None = None
+    liters: Any | None = None
+    fuel_type: str | None = None
+    source: str | None = None
+    notes: str | None = None
+    filled_at: datetime | None = None
+    reporting_status: str | None = None
 
 
 class FuelService:
@@ -51,6 +65,148 @@ class FuelService:
     def ensure_reports_access(user: Any) -> None:
         if not FuelService.user_has_any_group(user, ALLOWED_REPORT_GROUPS):
             raise PermissionDenied("У вас нет прав для просмотра отчётов")
+
+    @staticmethod
+    def _is_admin(user: Any) -> bool:
+        if not user or not getattr(user, "is_authenticated", False):
+            return False
+        if bool(getattr(user, "is_superuser", False)):
+            return True
+        return user.groups.filter(name=ROLE_ADMIN).exists()
+
+    @staticmethod
+    def _is_manager(user: Any) -> bool:
+        if not user or not getattr(user, "is_authenticated", False):
+            return False
+        return user.groups.filter(name=ROLE_MANAGER).exists()
+
+    @staticmethod
+    def _is_fueler(user: Any) -> bool:
+        if not user or not getattr(user, "is_authenticated", False):
+            return False
+        return user.groups.filter(name=ROLE_FUELER).exists()
+
+    @staticmethod
+    def parse_client_timezone(raw: str | None) -> Any:
+        text = (raw or "").strip()
+        if not text:
+            return timezone.get_current_timezone()
+        try:
+            return ZoneInfo(text)
+        except Exception as exc:
+            raise ValueError(
+                "Некорректный часовой пояс. Укажите IANA, например "
+                "Europe/Moscow"
+            ) from exc
+
+    @staticmethod
+    def fueler_local_cutoff_utc(client_tz: Any) -> datetime:
+        now_local = timezone.now().astimezone(client_tz)
+        cutoff_local = now_local - timedelta(hours=24)
+        return cutoff_local.astimezone(dt_timezone.utc)
+
+    @staticmethod
+    def is_within_fueler_edit_window(
+        record: FuelRecord, client_tz: Any
+    ) -> bool:
+        filled = record.filled_at
+        if timezone.is_naive(filled):
+            filled = timezone.make_aware(
+                filled, timezone.get_current_timezone()
+            )
+        filled_local = filled.astimezone(client_tz)
+        now_local = timezone.now().astimezone(client_tz)
+        cutoff_local = now_local - timedelta(hours=24)
+        return (
+            filled_local >= cutoff_local
+            and filled_local <= now_local
+        )
+
+    @staticmethod
+    def query_my_active_fuel_records(
+        user: Any,
+        client_tz: Any,
+    ) -> QuerySet[FuelRecord]:
+        cutoff = FuelService.fueler_local_cutoff_utc(client_tz)
+        now_utc = timezone.now()
+        return (
+            FuelRecord.objects.active_for_reports()
+            .filter(
+                employee_id=user.id,
+                filled_at__gte=cutoff,
+                filled_at__lte=now_utc,
+            )
+            .select_related(
+                "car", "employee", "car__region", "historical_region"
+            )
+            .order_by("-filled_at")
+        )
+
+    @staticmethod
+    def user_has_my_editable_fuel_records(user: Any, client_tz: Any) -> bool:
+        if not user or not getattr(user, "is_authenticated", False):
+            return False
+        if not user.groups.filter(name=ROLE_FUELER).exists():
+            return False
+        return FuelService.query_my_active_fuel_records(
+            user,
+            client_tz,
+        ).exists()
+
+    @staticmethod
+    def normalized_reports_region_id(
+        user: Any,
+        region_id: int | None,
+    ) -> int | None:
+        """Регион отчётов: для менеджера — свой; для админа — из запроса."""
+        if FuelService._is_admin(user):
+            return region_id
+        if FuelService._is_manager(user):
+            return user.region_id
+        return region_id
+
+    @staticmethod
+    def ensure_actor_can_patch_fuel_record(
+        actor: Any,
+        record: FuelRecord,
+        *,
+        client_tz: Any,
+        patch: FuelPatchPayload,
+    ) -> None:
+        if FuelService._is_admin(actor):
+            return
+        if FuelService._is_manager(actor):
+            rid = getattr(actor, "region_id", None)
+            if not rid:
+                raise PermissionDenied(
+                    "У менеджера не задан регион для операций с заправками"
+                )
+            if record.historical_region_id != rid:
+                raise PermissionDenied(
+                    "Менеджер может править только заправки своего региона"
+                )
+            return
+        if FuelService._is_fueler(actor):
+            if record.employee_id != actor.id:
+                raise PermissionDenied("Можно править только свои заправки")
+            if (
+                patch.reporting_status is not None
+                and patch.reporting_status
+                == FuelRecord.ReportingStatus.ACTIVE
+            ):
+                raise PermissionDenied("Недостаточно прав")
+            if record.reporting_status != FuelRecord.ReportingStatus.ACTIVE:
+                raise PermissionDenied("Запись недоступна для правок")
+            if not FuelService.is_within_fueler_edit_window(
+                record,
+                client_tz,
+            ):
+                raise PermissionDenied(
+                    "Правка доступна только в течение 24 часов с момента "
+                    "заправки (локальное время)"
+                )
+            return
+        raise PermissionDenied("Недостаточно прав для изменения заправки")
 
     @staticmethod
     def normalize_liters(raw_liters: Any) -> Decimal:
@@ -89,8 +245,60 @@ class FuelService:
         )
 
     @staticmethod
+    def apply_fuel_record_patch(
+        actor: Any,
+        record: FuelRecord,
+        patch: FuelPatchPayload,
+        *,
+        client_tz: Any,
+    ) -> FuelRecord:
+        FuelService.ensure_actor_can_patch_fuel_record(
+            actor,
+            record,
+            client_tz=client_tz,
+            patch=patch,
+        )
+        if patch.car_id is not None:
+            try:
+                car = Car.objects.get(id=patch.car_id, is_active=True)
+            except Car.DoesNotExist as exc:
+                raise ValueError(
+                    "Автомобиль не найден или не активен"
+                ) from exc
+            record.car = car
+            record.historical_region = car.region
+            record.historical_department = car.department
+        if patch.liters is not None:
+            record.liters = FuelService.normalize_liters(patch.liters)
+        if patch.fuel_type is not None:
+            if patch.fuel_type not in dict(FuelRecord.FuelType.choices):
+                raise ValueError("Некорректный тип топлива")
+            record.fuel_type = patch.fuel_type
+        if patch.source is not None:
+            if patch.source not in dict(FuelRecord.SourceFuel.choices):
+                raise ValueError("Некорректный способ заправки")
+            record.source = patch.source
+        if patch.notes is not None:
+            record.notes = patch.notes
+        if patch.filled_at is not None:
+            fa = patch.filled_at
+            if timezone.is_naive(fa):
+                fa = timezone.make_aware(
+                    fa,
+                    timezone.get_current_timezone(),
+                )
+            record.filled_at = fa
+        if patch.reporting_status is not None:
+            valid = {c for c, _ in FuelRecord.ReportingStatus.choices}
+            if patch.reporting_status not in valid:
+                raise ValueError("Некорректный статус учёта")
+            record.reporting_status = patch.reporting_status
+        record.save()
+        return record
+
+    @staticmethod
     def get_recent_records(limit: int = 30) -> QuerySet[FuelRecord]:
         safe_limit = max(1, min(limit, 100))
-        queryset = FuelRecord.objects.with_related_data()
+        queryset = FuelRecord.objects.active_for_reports().with_related_data()
         queryset = queryset.order_by("-filled_at")
         return queryset[:safe_limit]

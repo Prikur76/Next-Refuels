@@ -9,6 +9,10 @@ from django.utils.translation import gettext_lazy as _
 class FuelRecordQuerySet(models.QuerySet):
     """Кастомный QuerySet для модели FuelRecord"""
 
+    def active_for_reports(self):
+        """Записи, учитываемые в отчётах и аналитике."""
+        return self.filter(reporting_status=FuelRecord.ReportingStatus.ACTIVE)
+
     def by_car(self, car):
         """Записи по конкретному автомобилю"""
         if isinstance(car, models.Model):
@@ -194,6 +198,11 @@ class FuelRecord(models.Model):
     Вводится через Telegram-ботом.
     """
 
+    class ReportingStatus(models.TextChoices):
+        ACTIVE = "ACTIVE", _("Учитывается")
+        EXCLUDED_DUPLICATE = "EXCLUDED_DUPLICATE", _("Исключена (дубликат)")
+        EXCLUDED_DELETION = "EXCLUDED_DELETION", _("На удаление")
+
     class SourceFuel(models.TextChoices):
         CARD = "CARD", _("Топливная карта")
         TGBOT = "TGBOT", _("Телеграм-бот")
@@ -236,6 +245,12 @@ class FuelRecord(models.Model):
         verbose_name="Способ заправки",
     )
     notes = models.TextField(blank=True, verbose_name="Комментарий")
+    reporting_status = models.CharField(
+        max_length=32,
+        choices=ReportingStatus.choices,
+        default=ReportingStatus.ACTIVE,
+        verbose_name="Статус учёта в отчётах",
+    )
     historical_region = models.ForeignKey(
         "core.Region",
         on_delete=models.SET_NULL,

@@ -209,9 +209,13 @@ class ExportService:
         """Экспорт данных о заправках с читаемыми значениями"""
 
         # Получаем данные с оптимизацией
-        queryset = FuelRecord.objects.select_related(
-            "car", "employee", "car__region", "historical_region"
-        ).all()
+        queryset = (
+            FuelRecord.objects.active_for_reports()
+            .select_related(
+                "car", "employee", "car__region", "historical_region"
+            )
+            .all()
+        )
 
         # Подготавливаем данные для экспорта с читаемыми значениями
         fuel_data = []
