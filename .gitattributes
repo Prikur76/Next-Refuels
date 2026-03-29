@@ -1,0 +1,2 @@
+# Shell-скрипты в Linux-контейнерах должны быть LF (иначе broken shebang).
+*.sh text eol=lf

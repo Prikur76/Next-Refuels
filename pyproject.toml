@@ -1,3 +1,10 @@
+# Индекс по умолчанию: при сбоях до pypi.org (TLS/10054) используйте зеркало.
+# Вернуть официальный индекс: удалите блок [[tool.uv.index]] или задайте
+# UV_DEFAULT_INDEX=https://pypi.org/simple
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
 [project]
 name = "next-refuels"
 version = "0.1.0"
