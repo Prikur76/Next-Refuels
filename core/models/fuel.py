@@ -142,17 +142,6 @@ class FuelRecordQuerySet(models.QuerySet):
             .order_by("-total_liters")
         )
 
-    def duplicates_check(self, time_threshold_minutes=30):
-        """Поиск потенциальных дубликатов (одинаковая машина + время)"""
-        from django.db.models.functions import TruncMinute
-
-        return (
-            self.annotate(time_window=TruncMinute("filled_at"))
-            .values("car", "time_window")
-            .annotate(count=Count("id"))
-            .filter(count__gt=1)
-        )
-
     def with_historical_data(self):
         """Оптимизация запросов с подгрузкой исторических данных"""
         return self.select_related(
@@ -200,7 +189,6 @@ class FuelRecord(models.Model):
 
     class ReportingStatus(models.TextChoices):
         ACTIVE = "ACTIVE", _("Учитывается")
-        EXCLUDED_DUPLICATE = "EXCLUDED_DUPLICATE", _("Исключена (дубликат)")
         EXCLUDED_DELETION = "EXCLUDED_DELETION", _("На удаление")
 
     class SourceFuel(models.TextChoices):
@@ -282,6 +270,10 @@ class FuelRecord(models.Model):
             models.Index(fields=["car", "filled_at"]),
             models.Index(fields=["source", "filled_at"]),
             models.Index(fields=["historical_region", "filled_at"]),
+            models.Index(
+                fields=["reporting_status", "filled_at"],
+                name="fuel_reporting_fill_idx",
+            ),
         ]
         constraints = [
             models.CheckConstraint(

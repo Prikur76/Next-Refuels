@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
 from django.db.models import QuerySet
@@ -47,6 +48,17 @@ class FuelPatchPayload:
 
 class FuelService:
     """Единая бизнес-логика ввода и выборок по заправкам."""
+
+    @staticmethod
+    def filled_at_from_api_value(fa: datetime) -> datetime:
+        """Переводит filled_at из API в aware-UTC для ORM.
+
+        Наивная дата/время — календарные в settings.TIME_ZONE. Значение со
+        смещением или Z — абсолютный момент (обратная совместимость).
+        """
+        if timezone.is_naive(fa):
+            return timezone.make_aware(fa, ZoneInfo(settings.TIME_ZONE))
+        return fa
 
     @staticmethod
     def user_has_any_group(user: Any, groups: set[str]) -> bool:
@@ -139,7 +151,7 @@ class FuelService:
             .select_related(
                 "car", "employee", "car__region", "historical_region"
             )
-            .order_by("-filled_at")
+            .order_by("-filled_at", "-id")
         )
 
     @staticmethod
@@ -233,7 +245,12 @@ class FuelService:
         except User.DoesNotExist as exc:
             raise ValueError("Пользователь не найден или не активен") from exc
 
-        filled_at = payload.filled_at or timezone.now()
+        if payload.filled_at is None:
+            filled_at = timezone.now()
+        else:
+            filled_at = FuelService.filled_at_from_api_value(
+                payload.filled_at,
+            )
         return FuelRecord.objects.create_fuel_record(
             car=car,
             employee=user,
@@ -281,13 +298,9 @@ class FuelService:
         if patch.notes is not None:
             record.notes = patch.notes
         if patch.filled_at is not None:
-            fa = patch.filled_at
-            if timezone.is_naive(fa):
-                fa = timezone.make_aware(
-                    fa,
-                    timezone.get_current_timezone(),
-                )
-            record.filled_at = fa
+            record.filled_at = FuelService.filled_at_from_api_value(
+                patch.filled_at,
+            )
         if patch.reporting_status is not None:
             valid = {c for c, _ in FuelRecord.ReportingStatus.choices}
             if patch.reporting_status not in valid:
@@ -300,5 +313,5 @@ class FuelService:
     def get_recent_records(limit: int = 30) -> QuerySet[FuelRecord]:
         safe_limit = max(1, min(limit, 100))
         queryset = FuelRecord.objects.active_for_reports().with_related_data()
-        queryset = queryset.order_by("-filled_at")
+        queryset = queryset.order_by("-filled_at", "-id")
         return queryset[:safe_limit]

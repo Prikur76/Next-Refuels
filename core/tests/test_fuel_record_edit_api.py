@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
+from datetime import timezone as py_timezone
 from datetime import timedelta
 from decimal import Decimal
 
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
 from core.tests.tests_utils import (
@@ -81,6 +83,29 @@ class FuelRecordPatchRbacTests(TestCase):
         )
         self.assertEqual(resp.status_code, 403)
 
+    @override_settings(TIME_ZONE="Europe/Moscow")
+    def test_patch_naive_filled_at_is_moscow_wall_clock(self):
+        rec = create_fuel_record(
+            car=self.car_a,
+            employee=self.fueler,
+            liters=Decimal("10"),
+            filled_at=timezone.now(),
+        )
+        c = Client()
+        c.login(username="m1", password="pw")
+        resp = c.patch(
+            f"/api/v1/fuel-records/{rec.id}",
+            data=json.dumps({"filled_at": "2026-06-15T15:30:00"}),
+            content_type="application/json",
+            HTTP_X_CLIENT_TIMEZONE="UTC",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        rec.refresh_from_db()
+        expected_utc = datetime(
+            2026, 6, 15, 12, 30, 0, tzinfo=py_timezone.utc
+        )
+        self.assertEqual(rec.filled_at, expected_utc)
+
     def test_manager_patch_same_region(self):
         rec = create_fuel_record(
             car=self.car_a,
@@ -146,7 +171,7 @@ class FuelRecordPatchRbacTests(TestCase):
         total_before = r1.json()["total_liters"]
         resp = c.patch(
             f"/api/v1/fuel-records/{rec.id}",
-            data=json.dumps({"reporting_status": "EXCLUDED_DUPLICATE"}),
+            data=json.dumps({"reporting_status": "EXCLUDED_DELETION"}),
             content_type="application/json",
             HTTP_X_CLIENT_TIMEZONE="UTC",
         )

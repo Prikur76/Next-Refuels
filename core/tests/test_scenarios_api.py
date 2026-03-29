@@ -66,6 +66,7 @@ class HealthAndAuthScenariosTests(TestCase):
         self.assertIn("Менеджер", payload["groups"])
         self.assertEqual(payload["must_change_password"], False)
         self.assertEqual(payload["telegram_linked"], False)
+        self.assertEqual(payload["app_timezone"], "Europe/Moscow")
 
     def test_auth_me_returns_telegram_linked_when_user_has_telegram_id(self):
         self.manager.telegram_id = 123456789
