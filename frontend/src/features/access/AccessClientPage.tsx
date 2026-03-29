@@ -582,7 +582,8 @@ export function AccessClientPage() {
                         <td>
                           <button
                             type="button"
-                            className="btn-app"
+                            className="btn-app inline-flex items-center justify-center !p-2"
+                            aria-label="Редактировать"
                             title="Редактировать"
                             onClick={() => {
                               setEditingUser(user);
@@ -603,10 +604,7 @@ export function AccessClientPage() {
                               setEditCredentialsCopyStatus("");
                             }}
                           >
-                            <span className="inline-flex items-center gap-2">
-                              <Pencil size={14} aria-hidden="true" />
-                              <span>Редактировать</span>
-                            </span>
+                            <Pencil size={14} aria-hidden="true" />
                           </button>
                         </td>
                       </tr>
@@ -636,7 +634,8 @@ export function AccessClientPage() {
 
                       <button
                         type="button"
-                        className="btn-app shrink-0"
+                        className="btn-app inline-flex shrink-0 items-center justify-center !p-2"
+                        aria-label="Редактировать"
                         title="Редактировать"
                         onClick={() => {
                           setEditingUser(user);
@@ -657,12 +656,7 @@ export function AccessClientPage() {
                           setEditCredentialsCopyStatus("");
                         }}
                       >
-                        <span className="inline-flex items-center gap-2">
-                          <Pencil size={14} aria-hidden="true" />
-                          <span className="hidden sm:inline">
-                            Редактировать
-                          </span>
-                        </span>
+                        <Pencil size={14} aria-hidden="true" />
                       </button>
                     </div>
 
