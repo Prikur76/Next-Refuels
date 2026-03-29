@@ -15,6 +15,7 @@ import type {
   CarOut,
   FuelRecordIn,
   FuelRecordOut,
+  FuelRecordPatchIn,
   RegionOut,
   ReportsFiltersOut,
   RecordsPageOut,
@@ -26,7 +27,19 @@ import type {
 } from "./types";
 
 export async function getMe(): Promise<UserMeOut> {
-  return apiFetchJson<UserMeOut>("/api/v1/auth/me");
+  const params = new URLSearchParams();
+  if (typeof window !== "undefined") {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) {
+        params.set("client_tz", tz);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return apiFetchJson<UserMeOut>(`/api/v1/auth/me${suffix}`);
 }
 
 export async function createTelegramLinkCode(): Promise<TelegramLinkCodeOut> {
@@ -53,6 +66,26 @@ export async function createFuelRecord(
     method: "POST",
     body: payload,
   });
+}
+
+export async function getMyFuelRecords(): Promise<FuelRecordOut[]> {
+  return apiFetchJson<FuelRecordOut[]>("/api/v1/fuel-records/mine", {
+    clientTimezone: true,
+  });
+}
+
+export async function patchFuelRecord(
+  recordId: number,
+  payload: FuelRecordPatchIn
+): Promise<FuelRecordOut> {
+  return apiFetchJson<FuelRecordOut>(
+    `/api/v1/fuel-records/${recordId}`,
+    {
+      method: "PATCH",
+      body: payload,
+      clientTimezone: true,
+    }
+  );
 }
 
 export async function getSummary(filters: {

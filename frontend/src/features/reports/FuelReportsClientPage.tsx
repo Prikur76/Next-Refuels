@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Download, FileSpreadsheet } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileSpreadsheet,
+  PencilLine,
+} from "lucide-react";
 
+import { useMeQuery } from "@/components/auth/useMe";
 import { ResponsiveSelect } from "@/components/select/ResponsiveSelect";
 import {
   getAccessRegions,
@@ -13,11 +20,17 @@ import {
 } from "@/lib/api/endpoints";
 import type {
   FuelRecordOut,
+  FuelSource,
+  FuelType,
   ReportsFiltersOut,
   RecordsPageOut,
   RegionOut,
   SummaryOut,
 } from "@/lib/api/types";
+import {
+  FuelRecordEditDialog,
+  type FuelRecordEditInitial,
+} from "@/features/fuel/FuelRecordEditDialog";
 import { SkeletonLine } from "@/components/skeleton/Skeleton";
 import { formatDecimalRu, formatIntegerRu } from "@/lib/format-number-ru";
 
@@ -128,6 +141,20 @@ const SOURCE_LABELS: Record<string, string> = {
 
 function sourceLabel(value: string): string {
   return SOURCE_LABELS[value] ?? value;
+}
+
+function journalRowToInitial(item: FuelRecordOut): FuelRecordEditInitial {
+  return {
+    id: item.id,
+    car_id: item.car_id,
+    car_state_number: item.car_state_number,
+    liters: item.liters,
+    fuel_type: item.fuel_type as FuelType,
+    source: item.source as FuelSource,
+    notes: item.notes ?? "",
+    filled_at: item.filled_at,
+    reporting_status: item.reporting_status,
+  };
 }
 
 function fuelTankerPlateClass(isFuelTanker: boolean): string {
@@ -543,6 +570,16 @@ export function FuelReportsClientPage({
     queryFn: () => getFuelRecords(filters),
     enabled: queryNonce > 0,
   });
+
+  const queryClient = useQueryClient();
+  const meJournal = useMeQuery();
+  const canEditJournal = useMemo(() => {
+    const g = meJournal.data?.groups ?? [];
+    return g.includes("Менеджер") || g.includes("Администратор");
+  }, [meJournal.data?.groups]);
+  const [journalEdit, setJournalEdit] = useState<FuelRecordEditInitial | null>(
+    null,
+  );
 
   const exportUrl = (type: "csv" | "xlsx") => {
     const params = new URLSearchParams();
@@ -1027,6 +1064,7 @@ export function FuelReportsClientPage({
                           Дата
                         </button>
                       </th>
+                      {canEditJournal ? <th>Действия</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -1051,6 +1089,20 @@ export function FuelReportsClientPage({
                         <td className="mono">
                           {formatLocalDateTime(item.filled_at)}
                         </td>
+                        {canEditJournal ? (
+                          <td>
+                            <button
+                              type="button"
+                              className="btn-app inline-flex items-center gap-1 border border-[var(--border)] px-2 py-1 text-xs"
+                              onClick={() =>
+                                setJournalEdit(journalRowToInitial(item))
+                              }
+                            >
+                              <PencilLine size={14} aria-hidden />
+                              Изменить
+                            </button>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
@@ -1120,6 +1172,18 @@ export function FuelReportsClientPage({
                           {item.region_name || "—"}
                         </span>
                       </div>
+                      {canEditJournal ? (
+                        <button
+                          type="button"
+                          className="btn-app mt-2 w-full inline-flex items-center justify-center gap-1 border border-[var(--border)] text-xs"
+                          onClick={() =>
+                            setJournalEdit(journalRowToInitial(item))
+                          }
+                        >
+                          <PencilLine size={14} aria-hidden />
+                          Изменить
+                        </button>
+                      ) : null}
                     </div>
                   </article>
                 ))}
@@ -1171,10 +1235,33 @@ export function FuelReportsClientPage({
     </section>
   );
 
+  const editDialog = (
+    <FuelRecordEditDialog
+      open={journalEdit !== null}
+      initial={journalEdit}
+      onClose={() => setJournalEdit(null)}
+      onSaved={() => {
+        setQueryNonce((n) => n + 1);
+        void queryClient.invalidateQueries({ queryKey: ["reports"] });
+      }}
+      showReportingField={canEditJournal}
+    />
+  );
+
   if (embedded) {
-    return content;
+    return (
+      <>
+        {content}
+        {editDialog}
+      </>
+    );
   }
 
-  return <div className="page-wrap">{content}</div>;
+  return (
+    <div className="page-wrap">
+      {content}
+      {editDialog}
+    </div>
+  );
 }
 

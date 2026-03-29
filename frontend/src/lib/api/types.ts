@@ -13,6 +13,8 @@ export interface UserMeOut {
   mfa_policy_enabled: boolean;
   must_change_password: boolean;
   telegram_linked: boolean;
+  has_my_editable_fuel_records?: boolean;
+  region_id: number | null;
 }
 
 export interface TelegramLinkCodeOut {
@@ -39,6 +41,11 @@ export interface FuelRecordIn {
   notes: string;
 }
 
+export type FuelReportingStatus =
+  | "ACTIVE"
+  | "EXCLUDED_DUPLICATE"
+  | "EXCLUDED_DELETION";
+
 export interface FuelRecordOut {
   id: number;
   car_id: number;
@@ -50,6 +57,18 @@ export interface FuelRecordOut {
   filled_at: string;
   employee_name: string;
   region_name: string | null;
+  reporting_status?: FuelReportingStatus;
+  notes?: string;
+}
+
+export interface FuelRecordPatchIn {
+  car_id?: number;
+  liters?: number;
+  fuel_type?: FuelType;
+  source?: FuelSource;
+  notes?: string;
+  filled_at?: string;
+  reporting_status?: FuelReportingStatus;
 }
 
 export interface SummaryOut {

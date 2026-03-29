@@ -63,6 +63,21 @@ async function ensureCsrfCookie(baseUrl: string): Promise<void> {
   await csrfBootstrapPromise;
 }
 
+function resolvedClientTimezoneHeader(): Record<string, string> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) {
+      return { "X-Client-Timezone": tz };
+    }
+  } catch {
+    // Ignore: недоступно в среде без Intl.
+  }
+  return {};
+}
+
 export async function apiFetchJson<TResponse>(
   path: string,
   init?: {
@@ -70,6 +85,7 @@ export async function apiFetchJson<TResponse>(
     body?: unknown;
     headers?: Record<string, string>;
     signal?: AbortSignal;
+    clientTimezone?: boolean;
   }
 ): Promise<TResponse> {
   const baseUrl = requireApiBaseUrl();
@@ -78,6 +94,7 @@ export async function apiFetchJson<TResponse>(
   const method = init?.method ?? "GET";
   const headers: Record<string, string> = {
     Accept: "application/json",
+    ...(init?.clientTimezone ? resolvedClientTimezoneHeader() : {}),
     ...(init?.headers ?? {}),
   };
 
