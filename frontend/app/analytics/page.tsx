@@ -346,11 +346,12 @@ function RecentTransactionMobileCard(props: {
         {canEdit ? (
           <button
             type="button"
-            className="btn-app mt-3 w-full inline-flex items-center justify-center gap-1 border border-[var(--border)] text-xs"
+            className="btn-app mt-3 inline-flex items-center justify-center !p-2 border border-[var(--border)]"
+            aria-label="Изменить"
+            title="Изменить"
             onClick={onEdit}
           >
             <PencilLine size={14} aria-hidden />
-            Изменить
           </button>
         ) : null}
       </div>
@@ -1409,7 +1410,9 @@ export default function AnalyticsPage() {
                               <td>
                                 <button
                                   type="button"
-                                  className="btn-app inline-flex items-center gap-1 border border-[var(--border)] px-2 py-1 text-xs"
+                                  className="btn-app inline-flex items-center justify-center !p-2 border border-[var(--border)]"
+                                  aria-label="Изменить"
+                                  title="Изменить"
                                   onClick={() =>
                                     setFuelEditInitial(
                                       analyticsRecentToEditInitial(item),
@@ -1417,7 +1420,6 @@ export default function AnalyticsPage() {
                                   }
                                 >
                                   <PencilLine size={14} aria-hidden />
-                                  Изменить
                                 </button>
                               </td>
                             ) : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PencilLine } from "lucide-react";
 
@@ -12,6 +12,12 @@ import {
   type FuelRecordEditInitial,
 } from "@/features/fuel/FuelRecordEditDialog";
 import { formatDecimalRu } from "@/lib/format-number-ru";
+import {
+  isSuspiciousNonTankerRefuel,
+  SUSPICIOUS_REFUEL_ROW_TITLE,
+  suspiciousRefuelCardClass,
+  suspiciousRefuelTableRowClass,
+} from "@/lib/fuelSuspiciousLiters";
 
 function formatLocalDateTime(value: string): string {
   const parsed = new Date(value);
@@ -32,6 +38,28 @@ function sourceLabel(code: string): string {
     TRUCK: "ТЗ",
   };
   return m[code] ?? code;
+}
+
+function fuelTankerPlateClass(isFuelTanker: boolean): string {
+  return isFuelTanker
+    ? "font-semibold text-amber-700 dark:text-amber-300"
+    : "font-medium";
+}
+
+function renderCarPlateWithBadge(
+  plate: string,
+  isFuelTanker: boolean,
+): ReactElement {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span>{plate}</span>
+      {isFuelTanker ? (
+        <span className="rounded-md border border-amber-200 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-700/70 dark:bg-amber-900/40 dark:text-amber-200">
+          ТЗ
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 function recordToInitial(row: FuelRecordOut): FuelRecordEditInitial {
@@ -63,14 +91,8 @@ export function FuelMineClient() {
         <h1 className="section-title">Мои заправки</h1>
         <div className="muted-box mt-3 text-sm text-[var(--muted)]">
           <p>
-            Вы можете изменить записи о своих заправках в течение{" "}
-            <strong>24 часов</strong> с момента указанного времени заправки — в
-            часовом поясе вашего браузера. По истечении этого срока правки
-            доступны только <strong>менеджеру вашего региона</strong>.
-          </p>
-          <p className="mt-2">
-            Записи, помеченные как дубликат или на удаление, не показываются в
-            отчётах и не участвуют в итогах.
+            Изменение записей доступно в течение 24 часов с момента заправки. Для
+            уточнения записей позже - обратитесь к региональному менеджеру.
           </p>
         </div>
 
@@ -90,47 +112,153 @@ export function FuelMineClient() {
               Нет доступных для правки записей за последние 24 часа.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="table-app">
-                <thead>
-                  <tr>
-                    <th>Дата</th>
-                    <th>Авто</th>
-                    <th>Л</th>
-                    <th>Топливо</th>
-                    <th>Источник</th>
-                    <th>Комментарий</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {listQuery.data.map((row) => (
-                    <tr key={row.id}>
-                      <td className="mono text-sm">
-                        {formatLocalDateTime(row.filled_at)}
-                      </td>
-                      <td>{row.car_state_number}</td>
-                      <td>{formatDecimalRu(row.liters)}</td>
-                      <td>{row.fuel_type === "DIESEL" ? "Дизель" : "Бензин"}</td>
-                      <td>{sourceLabel(row.source)}</td>
-                      <td className="max-w-[180px] truncate text-sm">
-                        {row.notes || "—"}
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn-app inline-flex items-center gap-1 border border-[var(--border)] text-xs"
-                          onClick={() => setEditing(recordToInitial(row))}
-                        >
-                          <PencilLine size={14} />
-                          Изменить
-                        </button>
-                      </td>
+            <>
+              <div className="hidden lg:block overflow-x-auto">
+                <table className="table-app table-app--fuel-gap">
+                  <thead>
+                    <tr>
+                      <th>Дата</th>
+                      <th>Авто</th>
+                      <th>Л</th>
+                      <th>Топливо</th>
+                      <th>Источник</th>
+                      <th>Комментарий</th>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {listQuery.data.map((row) => {
+                      const suspicious = isSuspiciousNonTankerRefuel(
+                        row.car_is_fuel_tanker,
+                        row.liters,
+                      );
+                      return (
+                      <tr
+                        key={row.id}
+                        className={suspiciousRefuelTableRowClass(suspicious)}
+                        title={suspicious ? SUSPICIOUS_REFUEL_ROW_TITLE : undefined}
+                      >
+                        <td className="mono text-sm">
+                          {formatLocalDateTime(row.filled_at)}
+                        </td>
+                        <td
+                          className={fuelTankerPlateClass(
+                            row.car_is_fuel_tanker,
+                          )}
+                        >
+                          {renderCarPlateWithBadge(
+                            row.car_state_number,
+                            row.car_is_fuel_tanker,
+                          )}
+                        </td>
+                        <td>{formatDecimalRu(row.liters)}</td>
+                        <td>
+                          {row.fuel_type === "DIESEL" ? "Дизель" : "Бензин"}
+                        </td>
+                        <td>{sourceLabel(row.source)}</td>
+                        <td className="max-w-[180px] truncate text-sm">
+                          {row.notes || "—"}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-app inline-flex items-center justify-center !p-2 border border-[var(--border)]"
+                            aria-label="Изменить"
+                            title="Изменить"
+                            onClick={() => setEditing(recordToInitial(row))}
+                          >
+                            <PencilLine size={14} aria-hidden />
+                          </button>
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="space-y-3 lg:hidden">
+                {listQuery.data.map((row) => {
+                  const suspicious = isSuspiciousNonTankerRefuel(
+                    row.car_is_fuel_tanker,
+                    row.liters,
+                  );
+                  return (
+                  <article
+                    key={row.id}
+                    className={
+                      "rounded-xl p-3 sm:p-4 " +
+                      (suspicious
+                        ? suspiciousRefuelCardClass(true)
+                        : "border border-[var(--border)] bg-[var(--surface-0)]")
+                    }
+                    title={suspicious ? SUSPICIOUS_REFUEL_ROW_TITLE : undefined}
+                  >
+                    <div className="mono text-xs text-[var(--muted)]">
+                      {formatLocalDateTime(row.filled_at)}
+                    </div>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <span className="shrink-0 text-[var(--muted)]">
+                          Авто
+                        </span>
+                        <span
+                          className={`min-w-0 break-words text-right ${fuelTankerPlateClass(
+                            row.car_is_fuel_tanker,
+                          )}`}
+                        >
+                          {renderCarPlateWithBadge(
+                            row.car_state_number,
+                            row.car_is_fuel_tanker,
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="shrink-0 text-[var(--muted)]">
+                          Объем
+                        </span>
+                        <span className="font-semibold tabular-nums">
+                          {formatDecimalRu(row.liters)} л
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="shrink-0 text-[var(--muted)]">
+                          Топливо
+                        </span>
+                        <span className="min-w-0 break-words text-right">
+                          {row.fuel_type === "DIESEL" ? "Дизель" : "Бензин"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="shrink-0 text-[var(--muted)]">
+                          Источник
+                        </span>
+                        <span className="min-w-0 break-words text-right">
+                          {sourceLabel(row.source)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="shrink-0 text-[var(--muted)]">
+                          Комментарий
+                        </span>
+                        <span className="min-w-0 break-words text-right">
+                          {row.notes?.trim() ? row.notes : "—"}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-app mt-3 w-full inline-flex items-center justify-center gap-2 border border-[var(--border)] text-sm"
+                      onClick={() => setEditing(recordToInitial(row))}
+                    >
+                      <PencilLine size={16} aria-hidden />
+                      Изменить
+                    </button>
+                  </article>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       </section>

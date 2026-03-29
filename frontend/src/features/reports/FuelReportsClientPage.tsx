@@ -33,6 +33,12 @@ import {
 } from "@/features/fuel/FuelRecordEditDialog";
 import { SkeletonLine } from "@/components/skeleton/Skeleton";
 import { formatDecimalRu, formatIntegerRu } from "@/lib/format-number-ru";
+import {
+  isSuspiciousNonTankerRefuel,
+  SUSPICIOUS_REFUEL_ROW_TITLE,
+  suspiciousRefuelCardClass,
+  suspiciousRefuelTableRowClass,
+} from "@/lib/fuelSuspiciousLiters";
 
 function localYmdToIso(y: number, monthIndex: number, day: number): string {
   const m = String(monthIndex + 1).padStart(2, "0");
@@ -917,7 +923,7 @@ export function FuelReportsClientPage({
           ) : recordsQuery.data?.items?.length ? (
             <div className="mt-3">
               <div className="hidden overflow-x-auto lg:block">
-                <table className="table-app">
+                <table className="table-app table-app--fuel-gap">
                   <thead>
                     <tr>
                       <th>
@@ -1068,8 +1074,17 @@ export function FuelReportsClientPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedJournalItems.map((item) => (
-                      <tr key={item.id}>
+                    {sortedJournalItems.map((item) => {
+                      const suspicious = isSuspiciousNonTankerRefuel(
+                        item.car_is_fuel_tanker,
+                        item.liters,
+                      );
+                      return (
+                      <tr
+                        key={item.id}
+                        className={suspiciousRefuelTableRowClass(suspicious)}
+                        title={suspicious ? SUSPICIOUS_REFUEL_ROW_TITLE : undefined}
+                      >
                         <td className="mono">{item.id}</td>
                         <td className={fuelTankerPlateClass(item.car_is_fuel_tanker)}>
                           {renderCarPlateWithBadge(
@@ -1093,27 +1108,40 @@ export function FuelReportsClientPage({
                           <td>
                             <button
                               type="button"
-                              className="btn-app inline-flex items-center gap-1 border border-[var(--border)] px-2 py-1 text-xs"
+                              className="btn-app inline-flex items-center justify-center !p-2 border border-[var(--border)]"
+                              aria-label="Изменить"
+                              title="Изменить"
                               onClick={() =>
                                 setJournalEdit(journalRowToInitial(item))
                               }
                             >
                               <PencilLine size={14} aria-hidden />
-                              Изменить
                             </button>
                           </td>
                         ) : null}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               <div className="mt-3 space-y-2 lg:hidden">
-                {sortedJournalItems.map((item) => (
+                {sortedJournalItems.map((item) => {
+                  const suspicious = isSuspiciousNonTankerRefuel(
+                    item.car_is_fuel_tanker,
+                    item.liters,
+                  );
+                  return (
                   <article
                     key={item.id}
-                    className="rounded-xl border border-[var(--border)] bg-[var(--surface-0)] p-3"
+                    className={
+                      "rounded-xl p-3 " +
+                      (suspicious
+                        ? suspiciousRefuelCardClass(true)
+                        : "border border-[var(--border)] bg-[var(--surface-0)]")
+                    }
+                    title={suspicious ? SUSPICIOUS_REFUEL_ROW_TITLE : undefined}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="mono text-xs text-[var(--muted)]">
@@ -1175,18 +1203,20 @@ export function FuelReportsClientPage({
                       {canEditJournal ? (
                         <button
                           type="button"
-                          className="btn-app mt-2 w-full inline-flex items-center justify-center gap-1 border border-[var(--border)] text-xs"
+                          className="btn-app mt-2 inline-flex items-center justify-center !p-2 border border-[var(--border)]"
+                          aria-label="Изменить"
+                          title="Изменить"
                           onClick={() =>
                             setJournalEdit(journalRowToInitial(item))
                           }
                         >
                           <PencilLine size={14} aria-hidden />
-                          Изменить
                         </button>
                       ) : null}
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : (

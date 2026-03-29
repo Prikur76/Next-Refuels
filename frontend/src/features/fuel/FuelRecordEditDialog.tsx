@@ -2,9 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, PencilLine, X } from "lucide-react";
+import { Loader2, PencilLine, Save, Trash2, X } from "lucide-react";
 
+import { useMeQuery } from "@/components/auth/useMe";
 import { patchFuelRecord, searchCars } from "@/lib/api/endpoints";
+import {
+  instantIsoToDatetimeLocalInZone,
+  normalizeWallDatetimeForApi,
+} from "@/lib/datetimeAppTz";
 import type {
   FuelRecordPatchIn,
   FuelReportingStatus,
@@ -45,20 +50,6 @@ function parseLitersInput(raw: string): number | null {
   return value;
 }
 
-function isoToDatetimeLocalValue(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
-}
-
-function datetimeLocalToIso(local: string): string {
-  const d = new Date(local);
-  return d.toISOString();
-}
-
 export type FuelRecordEditInitial = {
   id: number;
   car_id: number;
@@ -76,7 +67,7 @@ type FuelRecordEditDialogProps = {
   initial: FuelRecordEditInitial | null;
   onClose: () => void;
   onSaved: () => void;
-  /** Кнопки «дубликат» / «на удаление» (заправщик) */
+  /** Кнопка «на удаление» (заправщик) */
   showExclusionActions?: boolean;
   /** Поле статуса учёта (менеджер / админ) */
   showReportingField?: boolean;
@@ -91,6 +82,15 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
     showExclusionActions = false,
     showReportingField = false,
   } = props;
+
+  const meQuery = useMeQuery();
+  const appTimezone = useMemo(() => {
+    return (
+      meQuery.data?.app_timezone ||
+      process.env.NEXT_PUBLIC_APP_TIME_ZONE ||
+      "Europe/Moscow"
+    );
+  }, [meQuery.data?.app_timezone]);
 
   const [carQuery, setCarQuery] = useState("");
   const [carId, setCarId] = useState<number | null>(null);
@@ -111,10 +111,12 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
     setFuelType(initial.fuel_type);
     setSource(initial.source);
     setNotes(initial.notes ?? "");
-    setFilledLocal(isoToDatetimeLocalValue(initial.filled_at));
+    setFilledLocal(
+      instantIsoToDatetimeLocalInZone(initial.filled_at, appTimezone),
+    );
     setReportingStatus(initial.reporting_status ?? "ACTIVE");
     setMessage("");
-  }, [open, initial]);
+  }, [open, initial, appTimezone]);
 
   const normalizedCarQuery = useMemo(
     () => normalizeStateNumberInput(carQuery),
@@ -158,7 +160,8 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
 
   function handleSave(): void {
     const litersVal = parseLitersInput(liters);
-    if (!carId || litersVal === null || !filledLocal) {
+    const wallAt = normalizeWallDatetimeForApi(filledLocal);
+    if (!carId || litersVal === null || !wallAt) {
       setMessage("Заполните авто, литры и дату.");
       return;
     }
@@ -168,7 +171,7 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
       fuel_type: fuelType,
       source,
       notes,
-      filled_at: datetimeLocalToIso(filledLocal),
+      filled_at: wallAt,
     };
     if (showReportingField) {
       body.reporting_status = reportingStatus;
@@ -190,17 +193,19 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-[var(--border)] bg-[var(--surface-0)] shadow-xl sm:rounded-2xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-0)] px-4 py-3">
-          <h2 id="fuel-edit-title" className="text-sm font-semibold">
+      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-[var(--border)] bg-[var(--surface-0)] shadow-xl sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface-0)] px-4 py-3">
+          <h2 id="fuel-edit-title" className="min-w-0 text-sm font-semibold">
             <span className="inline-flex items-center gap-2">
-              <PencilLine size={18} aria-hidden />
-              Редактирование заправки #{initial.id}
+              <PencilLine size={18} aria-hidden className="shrink-0" />
+              <span className="break-words">
+                Редактирование заправки #{initial.id}
+              </span>
             </span>
           </h2>
           <button
             type="button"
-            className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface-1)]"
+            className="shrink-0 rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface-1)]"
             aria-label="Закрыть"
             onClick={onClose}
           >
@@ -208,7 +213,8 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
           </button>
         </div>
 
-        <div className="space-y-3 p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain p-4">
+          <div className="space-y-3">
           <label className="label-app">
             Госномер
             <input
@@ -254,26 +260,21 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
             </div>
           ) : null}
 
-          <div
-            className="grid gap-3"
-            style={{
-              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-            }}
-          >
-            <label className="label-app">
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="label-app min-w-0">
               Литры
               <input
-                className="input-app"
+                className="input-app min-w-0 max-w-full"
                 value={liters}
                 onChange={(e) => setLiters(e.target.value)}
                 inputMode="decimal"
               />
             </label>
-            <label className="label-app">
+            <label className="label-app min-w-0">
               Дата и время заправки
               <input
                 type="datetime-local"
-                className="input-app"
+                className="input-app min-w-0 max-w-full"
                 value={filledLocal}
                 onChange={(e) => setFilledLocal(e.target.value)}
               />
@@ -328,10 +329,6 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
                 options={[
                   { value: "ACTIVE", label: "Учитывается" },
                   {
-                    value: "EXCLUDED_DUPLICATE",
-                    label: "Исключить (дубликат)",
-                  },
-                  {
                     value: "EXCLUDED_DELETION",
                     label: "На удаление (не учитывать)",
                   },
@@ -344,7 +341,42 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
             <div className="text-sm text-[var(--muted)]">{message}</div>
           ) : null}
 
-          <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap">
+          {/* Мобильная версия: только иконки */}
+          <div
+            className={`grid gap-2 pt-2 sm:hidden ${
+              showExclusionActions ? "grid-cols-2" : "grid-cols-1"
+            }`}
+          >
+            <button
+              type="button"
+              className="btn-app btn-primary inline-flex min-h-12 items-center justify-center px-3 py-3"
+              disabled={saveMutation.isPending}
+              aria-label="Сохранить"
+              title="Сохранить"
+              onClick={handleSave}
+            >
+              {saveMutation.isPending ? (
+                <Loader2 className="animate-spin" size={22} aria-hidden />
+              ) : (
+                <Save size={22} strokeWidth={2} aria-hidden />
+              )}
+            </button>
+            {showExclusionActions ? (
+              <button
+                type="button"
+                className="btn-app inline-flex min-h-12 items-center justify-center border border-red-300 bg-red-50 px-3 py-3 text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400"
+                disabled={saveMutation.isPending}
+                aria-label="На удаление"
+                title="На удаление"
+                onClick={() => markStatus("EXCLUDED_DELETION")}
+              >
+                <Trash2 size={22} strokeWidth={2} aria-hidden />
+              </button>
+            ) : null}
+          </div>
+
+          {/* Планшет и десктоп: подписи на кнопках */}
+          <div className="hidden flex-col gap-2 pt-2 sm:flex sm:flex-row sm:flex-wrap">
             <button
               type="button"
               className="btn-app btn-primary inline-flex flex-1 items-center justify-center gap-2"
@@ -353,30 +385,24 @@ export function FuelRecordEditDialog(props: FuelRecordEditDialogProps) {
             >
               {saveMutation.isPending ? (
                 <Loader2 className="animate-spin" size={18} />
-              ) : null}
+              ) : (
+                <Save size={18} aria-hidden />
+              )}
               Сохранить
             </button>
             {showExclusionActions ? (
-              <>
-                <button
-                  type="button"
-                  className="btn-app border border-[var(--border)]"
-                  disabled={saveMutation.isPending}
-                  onClick={() => markStatus("EXCLUDED_DUPLICATE")}
-                >
-                  Дубликат
-                </button>
-                <button
-                  type="button"
-                  className="btn-app border border-[var(--border)]"
-                  disabled={saveMutation.isPending}
-                  onClick={() => markStatus("EXCLUDED_DELETION")}
-                >
-                  На удаление
-                </button>
-              </>
+              <button
+                type="button"
+                className="btn-app inline-flex flex-1 items-center justify-center gap-2 border border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400 sm:flex-initial"
+                disabled={saveMutation.isPending}
+                onClick={() => markStatus("EXCLUDED_DELETION")}
+              >
+                <Trash2 size={18} aria-hidden />
+                На удаление
+              </button>
             ) : null}
           </div>
+        </div>
         </div>
       </div>
     </div>

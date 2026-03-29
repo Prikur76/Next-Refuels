@@ -24,6 +24,18 @@
     0 8px 22px rgba(15, 23, 42, 0.08),
     0 0 0 rgba(0, 0, 0, 0)
   );
+  --fuel-suspicious-row-bg: light-dark(
+    color-mix(in srgb, #fecaca 26%, #ffffff),
+    color-mix(
+      in srgb,
+      #7f1d1d 34%,
+      color-mix(in srgb, #121212 93%, #fff 7%)
+    )
+  );
+  --fuel-suspicious-row-border: light-dark(
+    rgba(220, 38, 38, 0.22),
+    rgba(248, 113, 113, 0.28)
+  );
 }
 
 html[data-theme="light"] {
@@ -37,6 +49,8 @@ html[data-theme="light"] {
   --surface-2: #f3f4f6;
   --primary: #2563eb;
   --primary-contrast: #ffffff;
+  --fuel-suspicious-row-bg: color-mix(in srgb, #fecaca 26%, #ffffff);
+  --fuel-suspicious-row-border: rgba(220, 38, 38, 0.22);
 }
 
 html[data-theme="dark"] {
@@ -50,6 +64,8 @@ html[data-theme="dark"] {
   --surface-2: color-mix(in srgb, #121212 90%, #fff 10%);
   --primary: #60a5fa;
   --primary-contrast: #ffffff;
+  --fuel-suspicious-row-bg: color-mix(in srgb, #7f1d1d 34%, var(--surface-1));
+  --fuel-suspicious-row-border: rgba(248, 113, 113, 0.28);
 }
 
 html,
@@ -590,6 +606,59 @@ select.input-app option {
   padding: 10px 8px 10px 0;
   border-top: 1px solid var(--border);
   vertical-align: top;
+}
+
+/* Журнал заправок: зазор между строками + «плашка» для подозрительного объёма */
+.table-app.table-app--fuel-gap {
+  border-collapse: separate;
+  border-spacing: 0 6px;
+}
+
+.table-app.table-app--fuel-gap tbody td {
+  border-top: none;
+}
+
+.table-app.table-app--fuel-gap thead th {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.table-app.table-app--fuel-gap tbody tr.fuel-row--suspicious td {
+  background: var(--fuel-suspicious-row-bg);
+  border-top: 1px solid var(--fuel-suspicious-row-border);
+  border-bottom: 1px solid var(--fuel-suspicious-row-border);
+  vertical-align: middle;
+}
+
+.table-app.table-app--fuel-gap tbody tr.fuel-row--suspicious td:first-child {
+  border-left: 1px solid var(--fuel-suspicious-row-border);
+  border-radius: 8px 0 0 8px;
+  padding-left: 10px;
+}
+
+.table-app.table-app--fuel-gap tbody tr.fuel-row--suspicious td:last-child {
+  border-right: 1px solid var(--fuel-suspicious-row-border);
+  border-radius: 0 8px 8px 0;
+  padding-right: 8px;
+}
+
+.table-app.table-app--fuel-gap
+  tbody
+  tr.fuel-row--suspicious
+  td:first-child:last-child {
+  border-radius: 8px;
+  border-right: 1px solid var(--fuel-suspicious-row-border);
+}
+
+/* Мобильные карточки — те же цвета, отдельная от соседей рамка */
+.fuel-card--suspicious {
+  border: 1px solid var(--fuel-suspicious-row-border);
+  background: var(--fuel-suspicious-row-bg);
+  box-shadow: 0 1px 3px rgba(220, 38, 38, 0.07);
+}
+
+html[data-theme="dark"] .fuel-card--suspicious {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.32);
 }
 
 .mono {

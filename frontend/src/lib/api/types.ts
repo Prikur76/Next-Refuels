@@ -15,6 +15,8 @@ export interface UserMeOut {
   telegram_linked: boolean;
   has_my_editable_fuel_records?: boolean;
   region_id: number | null;
+  /** IANA, совпадает с TIME_ZONE на сервере (календарь заправок). */
+  app_timezone: string;
 }
 
 export interface TelegramLinkCodeOut {
@@ -41,10 +43,7 @@ export interface FuelRecordIn {
   notes: string;
 }
 
-export type FuelReportingStatus =
-  | "ACTIVE"
-  | "EXCLUDED_DUPLICATE"
-  | "EXCLUDED_DELETION";
+export type FuelReportingStatus = "ACTIVE" | "EXCLUDED_DELETION";
 
 export interface FuelRecordOut {
   id: number;
