@@ -65,7 +65,7 @@ class Command(BaseCommand):
                 lambda: base_qs.fuel_statistics(),
             ),
             (
-                "reports.filters (1×scan + User/Region)",
+                "reports.filters (emp/region ids + User/Region)",
                 lambda: Command._bench_reports_filters_like_api(
                     base_qs_filters_only,
                 ),
@@ -120,38 +120,33 @@ class Command(BaseCommand):
 
     @staticmethod
     def _bench_reports_filters_like_api(qs):
-        """Как /api/v1/reports/filters: один проход по строкам, User/Region."""
-        employee_id_set: set[int] = set()
-        historical_region_id_set: set[int] = set()
-        car_region_id_set: set[int] = set()
-        for row in qs.values_list(
-            "employee_id",
-            "historical_region_id",
-            "car__region_id",
-        ).iterator(chunk_size=2048):
-            emp_id, hist_rid, car_rid = row
-            if emp_id is not None:
-                employee_id_set.add(emp_id)
-            if hist_rid is not None:
-                historical_region_id_set.add(hist_rid)
-            if car_rid is not None:
-                car_region_id_set.add(car_rid)
-        if employee_id_set:
+        """Как /api/v1/reports/filters: DISTINCT по id, затем User/Region."""
+        employee_ids = list(
+            qs.filter(employee_id__isnull=False)
+            .values_list("employee_id", flat=True)
+            .distinct()
+        )
+        if employee_ids:
             list(
-                User.objects.filter(pk__in=employee_id_set).values_list(
+                User.objects.filter(pk__in=employee_ids).values_list(
                     "first_name",
                     "last_name",
                     "username",
                 ),
             )
-        region_pks = historical_region_id_set | car_region_id_set
+        hist_ids = list(
+            qs.exclude(historical_region_id__isnull=True)
+            .values_list("historical_region_id", flat=True)
+            .distinct()
+        )
+        car_reg_ids = list(
+            qs.filter(car__region_id__isnull=False)
+            .values_list("car__region_id", flat=True)
+            .distinct()
+        )
+        region_pks = set(hist_ids) | set(car_reg_ids)
         if region_pks:
-            list(
-                Region.objects.filter(pk__in=region_pks).values_list(
-                    "name",
-                    flat=True,
-                ),
-            )
+            list(Region.objects.filter(pk__in=region_pks).values_list("name", flat=True))
 
     @staticmethod
     def _measure(fn, iterations: int) -> dict:

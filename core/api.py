@@ -627,26 +627,15 @@ def reports_filters(
     if source:
         qs = qs.filter(source=source)
 
-    employee_id_set: set[int] = set()
-    historical_region_id_set: set[int] = set()
-    car_region_id_set: set[int] = set()
-    for row in qs.values_list(
-        "employee_id",
-        "historical_region_id",
-        "car__region_id",
-    ).iterator(chunk_size=2048):
-        emp_id, hist_rid, car_rid = row
-        if emp_id is not None:
-            employee_id_set.add(emp_id)
-        if hist_rid is not None:
-            historical_region_id_set.add(hist_rid)
-        if car_rid is not None:
-            car_region_id_set.add(car_rid)
-
     employees_set: set[str] = set()
-    if employee_id_set:
+    employee_ids = list(
+        qs.filter(employee_id__isnull=False)
+        .values_list("employee_id", flat=True)
+        .distinct()
+    )
+    if employee_ids:
         for first_name, last_name, username in User.objects.filter(
-            pk__in=employee_id_set,
+            pk__in=employee_ids,
         ).values_list("first_name", "last_name", "username"):
             full_name = " ".join(
                 part.strip()
@@ -658,7 +647,17 @@ def reports_filters(
             elif username:
                 employees_set.add(username)
 
-    region_pk_set = historical_region_id_set | car_region_id_set
+    historical_region_ids = list(
+        qs.exclude(historical_region_id__isnull=True)
+        .values_list("historical_region_id", flat=True)
+        .distinct()
+    )
+    car_region_ids = list(
+        qs.filter(car__region_id__isnull=False)
+        .values_list("car__region_id", flat=True)
+        .distinct()
+    )
+    region_pk_set = set(historical_region_ids) | set(car_region_ids)
     regions_set: set[str] = set()
     if region_pk_set:
         for name in Region.objects.filter(pk__in=region_pk_set).values_list(
