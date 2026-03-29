@@ -70,6 +70,17 @@
   должны возвращать корректные агрегаты.
 - `reports/records` должна поддерживать фильтры и пагинацию по курсору.
 
+### 3.1. Аналитика (`GET /api/v1/analytics/stats`)
+
+Поведение срезов и полей ответа описано в **`docs/ARCHITECTURE.md`** (раздел
+«Аналитика»): единый срез дашборда для `refuel_channels`, `by_day`,
+`by_day_region` и `by_employee`; отдельно — `refuel_sources` и топы по
+автомобилям.
+
+**Автотесты:** в `core/tests/test_scenarios_api.py` класс
+`ReportsAccessAndAnalyticsScenariosTests` — в том числе согласованность TRUCK
+на топливозаправщик и сумм `by_day` / регионов с каналами.
+
 ### 4. Telegram-бот
 
 - Привязка Telegram аккаунта по коду из `/start <code>`.

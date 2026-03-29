@@ -9,6 +9,7 @@ from django.utils import timezone
 from core.models import FuelRecord, TelegramLinkToken, User
 from core.tests.tests_utils import (
     create_car,
+    create_fuel_record,
     create_region,
     create_user,
     login_client,
@@ -679,6 +680,101 @@ class ReportsAccessAndAnalyticsScenariosTests(TestCase):
         self.assertIn("refuel_channels", payload)
         self.assertIn("recent_records", payload)
         self.assertIn("by_car_fuel_tankers", payload)
+
+    def test_analytics_refuel_channels_includes_truck_to_tanker(self):
+        tanker = create_car(
+            code="TZ1",
+            state_number="TZ001",
+            model="Tank",
+            region=self.region,
+        )
+        tanker.is_fuel_tanker = True
+        tanker.save(update_fields=["is_fuel_tanker"])
+
+        at_time = timezone.now()
+        create_fuel_record(
+            car=tanker,
+            employee=self.manager,
+            liters=Decimal("50"),
+            source="TRUCK",
+            filled_at=at_time,
+        )
+
+        login_client(
+            self.client,
+            username=self.manager.username,
+            password="pass12345",
+        )
+        day = at_time.date().isoformat()
+        resp = self.client.get(
+            f"/api/v1/analytics/stats?start_date={day}&end_date={day}"
+        )
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        channels = {c["channel"]: c for c in payload["refuel_channels"]}
+        self.assertEqual(channels["TRUCK"]["liters"], 50.0)
+        day_rows = [r for r in payload["by_day"] if r["date"] == day]
+        self.assertEqual(len(day_rows), 1)
+        self.assertEqual(day_rows[0]["liters"], 50.0)
+
+    def test_analytics_by_employee_matches_channel_scope(self):
+        tanker = create_car(
+            code="TZ2",
+            state_number="TZ002",
+            model="Tank2",
+            region=self.region,
+        )
+        tanker.is_fuel_tanker = True
+        tanker.save(update_fields=["is_fuel_tanker"])
+
+        at_time = timezone.now()
+        create_fuel_record(
+            car=tanker,
+            employee=self.manager,
+            liters=Decimal("100"),
+            source="CARD",
+            filled_at=at_time,
+        )
+        create_fuel_record(
+            car=tanker,
+            employee=self.manager,
+            liters=Decimal("40"),
+            source="TRUCK",
+            filled_at=at_time,
+        )
+
+        login_client(
+            self.client,
+            username=self.manager.username,
+            password="pass12345",
+        )
+        day = at_time.date().isoformat()
+        resp = self.client.get(
+            f"/api/v1/analytics/stats?start_date={day}&end_date={day}"
+        )
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        channels = {c["channel"]: c for c in payload["refuel_channels"]}
+        self.assertEqual(channels["CARD"]["liters"], 0.0)
+        self.assertEqual(channels["TRUCK"]["liters"], 40.0)
+
+        emp_rows = [
+            r
+            for r in payload["by_employee"]
+            if r.get("employee_id") == self.manager.id
+        ]
+        self.assertTrue(emp_rows)
+        self.assertEqual(emp_rows[0]["liters"], 40.0)
+
+        day_rows = [r for r in payload["by_day"] if r["date"] == day]
+        self.assertEqual(len(day_rows), 1)
+        self.assertEqual(day_rows[0]["liters"], 40.0)
+        ch_sum = sum(c["liters"] for c in payload["refuel_channels"])
+        self.assertEqual(ch_sum, 40.0)
+        reg_sum = sum(
+            r["liters"] for r in payload["by_day_region"] if r["date"] == day
+        )
+        self.assertEqual(reg_sum, 40.0)
 
     def test_analytics_export_returns_xlsx(self):
         self._login_as_manager()
