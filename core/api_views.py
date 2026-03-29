@@ -34,7 +34,7 @@ def _build_filtered_queryset(request: HttpRequest):
     qs = (
         FuelRecord.objects.active_for_reports()
         .with_related_data()
-        .order_by("-filled_at")
+        .order_by("-filled_at", "-id")
     )
     from_date = request.GET.get("from_date")
     to_date = request.GET.get("to_date")
