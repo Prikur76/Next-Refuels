@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ReactElement } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   usePathname,
   useRouter,
@@ -20,7 +20,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { FileSpreadsheet } from "lucide-react";
+import { FileSpreadsheet, PencilLine } from "lucide-react";
 
 import {
   AnalyticsByCarChart,
@@ -30,9 +30,14 @@ import { MeasureWidth } from "@/components/analytics/MeasureWidth";
 import { SkeletonLine } from "@/components/skeleton/Skeleton";
 import { ResponsiveSelect } from "@/components/select/ResponsiveSelect";
 import { useMediaQueryMinWidth } from "@/hooks/useMediaQueryMinWidth";
+import { useMeQuery } from "@/components/auth/useMe";
 import { apiFetchJson } from "@/lib/api/client";
 import { getAccessRegions } from "@/lib/api/endpoints";
 import type { FuelSource, FuelType, RegionOut } from "@/lib/api/types";
+import {
+  FuelRecordEditDialog,
+  type FuelRecordEditInitial,
+} from "@/features/fuel/FuelRecordEditDialog";
 import { FuelReportsClientPage } from "@/features/reports/FuelReportsClientPage";
 import {
   formatDecimalRu,
@@ -226,15 +231,35 @@ type AnalyticsRefuelChannelSlice = {
 };
 
 type AnalyticsRecentRecord = {
+  id: number;
   filled_at: string;
   employee_name: string;
   car: string;
+  car_id: number;
   car_is_fuel_tanker: boolean;
   region_name: string | null;
   fuel_type: FuelType;
   fuel_type_label: string;
+  source: FuelSource;
   liters: number;
+  notes: string;
 };
+
+function analyticsRecentToEditInitial(
+  item: AnalyticsRecentRecord,
+): FuelRecordEditInitial {
+  return {
+    id: item.id,
+    car_id: item.car_id,
+    car_state_number: item.car,
+    liters: item.liters,
+    fuel_type: item.fuel_type,
+    source: item.source,
+    notes: item.notes ?? "",
+    filled_at: item.filled_at,
+    reporting_status: "ACTIVE",
+  };
+}
 
 type AnalyticsEmployeeBreakdown = {
   employee_id: number | null;
@@ -274,8 +299,10 @@ function pieRadii(sizePx: number): { inner: number; outer: number } {
 
 function RecentTransactionMobileCard(props: {
   item: AnalyticsRecentRecord;
+  canEdit: boolean;
+  onEdit: () => void;
 }): ReactElement {
-  const { item } = props;
+  const { item, canEdit, onEdit } = props;
   return (
     <article className="rounded-xl border border-[var(--border)] bg-[var(--surface-0)] p-3 sm:p-4">
       <div className="mono text-xs text-[var(--muted)]">
@@ -316,6 +343,16 @@ function RecentTransactionMobileCard(props: {
             {formatDecimal(item.liters)} л
           </span>
         </div>
+        {canEdit ? (
+          <button
+            type="button"
+            className="btn-app mt-3 w-full inline-flex items-center justify-center gap-1 border border-[var(--border)] text-xs"
+            onClick={onEdit}
+          >
+            <PencilLine size={14} aria-hidden />
+            Изменить
+          </button>
+        ) : null}
       </div>
     </article>
   );
@@ -431,6 +468,15 @@ export default function AnalyticsPage() {
       );
     },
   });
+
+  const queryClient = useQueryClient();
+  const meForEdit = useMeQuery();
+  const canEditFuelRecords = useMemo(() => {
+    const g = meForEdit.data?.groups ?? [];
+    return g.includes("Менеджер") || g.includes("Администратор");
+  }, [meForEdit.data?.groups]);
+  const [fuelEditInitial, setFuelEditInitial] =
+    useState<FuelRecordEditInitial | null>(null);
 
   const exportUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -964,9 +1010,10 @@ export default function AnalyticsPage() {
                     Карта, Telegram-бот и топливозаправщик
                   </div>
                   <p className="mt-1 text-xs text-[var(--muted)]">
-                    Только заправки на автомобили без отметки «топливозаправщик»:
-                    карта, бот и выдача с бензовоза (способ «Топливозаправщик»).
-                    Заправка самих топливозаправщиков не учитывается.
+                    Карта и бот — только для автомобилей без отметки
+                    «топливозаправщик» (самозаправ ТЗ картой/ботом сюда не
+                    входит). Топливозаправщик — все записи способом «с бензовоза»,
+                    в том числе выдача на топливозаправщик.
                   </p>
                   {channelSlices.some((c) => c.liters > 0) ? (
                     <MeasureWidth
@@ -1064,6 +1111,10 @@ export default function AnalyticsPage() {
                 className="card mt-4 min-w-0 p-3 sm:p-4"
               >
                 <div className="text-sm font-semibold">Объем по дням</div>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Тот же срез записей, что и график «Карта, Telegram-бот и
+                  топливозаправщик» (см. описание к нему).
+                </p>
                 <MeasureWidth
                   className="mt-3 min-w-0"
                   style={{
@@ -1127,6 +1178,10 @@ export default function AnalyticsPage() {
                 className="card mt-4 min-w-0 p-3 sm:p-4"
               >
                 <div className="text-sm font-semibold">Объем по дням и регионам</div>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Исторический регион записи; срез тот же, что у линейного графика
+                  выше.
+                </p>
                 <MeasureWidth
                   className="mt-3 min-w-0"
                   style={{
@@ -1304,10 +1359,16 @@ export default function AnalyticsPage() {
               ) : recent.length ? (
                 <>
                   <div className="mt-3 space-y-3 lg:hidden">
-                    {recent.map((item, idx) => (
+                    {recent.map((item) => (
                       <RecentTransactionMobileCard
-                        key={`${item.filled_at}-${idx}`}
+                        key={item.id}
                         item={item}
+                        canEdit={canEditFuelRecords}
+                        onEdit={() =>
+                          setFuelEditInitial(
+                            analyticsRecentToEditInitial(item),
+                          )
+                        }
                       />
                     ))}
                   </div>
@@ -1321,11 +1382,12 @@ export default function AnalyticsPage() {
                           <th>Регион</th>
                           <th>Тип топлива</th>
                           <th>Объем</th>
+                          {canEditFuelRecords ? <th>Действия</th> : null}
                         </tr>
                       </thead>
                       <tbody>
-                        {recent.map((item, idx) => (
-                          <tr key={`${item.filled_at}-${idx}`}>
+                        {recent.map((item) => (
+                          <tr key={item.id}>
                             <td className="mono">
                               {formatLocalDateTime(item.filled_at)}
                             </td>
@@ -1343,6 +1405,22 @@ export default function AnalyticsPage() {
                             <td>{item.region_name ?? "—"}</td>
                             <td>{item.fuel_type_label}</td>
                             <td>{formatDecimal(item.liters)}</td>
+                            {canEditFuelRecords ? (
+                              <td>
+                                <button
+                                  type="button"
+                                  className="btn-app inline-flex items-center gap-1 border border-[var(--border)] px-2 py-1 text-xs"
+                                  onClick={() =>
+                                    setFuelEditInitial(
+                                      analyticsRecentToEditInitial(item),
+                                    )
+                                  }
+                                >
+                                  <PencilLine size={14} aria-hidden />
+                                  Изменить
+                                </button>
+                              </td>
+                            ) : null}
                           </tr>
                         ))}
                       </tbody>
@@ -1360,6 +1438,18 @@ export default function AnalyticsPage() {
           </>
         )}
       </section>
+      <FuelRecordEditDialog
+        open={fuelEditInitial !== null}
+        initial={fuelEditInitial}
+        onClose={() => setFuelEditInitial(null)}
+        onSaved={() => {
+          void statsQuery.refetch();
+          void queryClient.invalidateQueries({
+            queryKey: ["analytics", "stats"],
+          });
+        }}
+        showReportingField={canEditFuelRecords}
+      />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   Droplets,
   Home,
   Link2,
+  ListChecks,
   LogOut,
   Settings,
   Shield,
@@ -193,6 +194,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         icon: <Droplets size={18} />,
       });
 
+      if (
+        access.isFueler &&
+        meQuery.data?.has_my_editable_fuel_records
+      ) {
+        items.push({
+          key: "my-fuel",
+          href: "/fuel/mine",
+          label: "Мои заправки",
+          icon: <ListChecks size={18} />,
+        });
+      }
+
       if (access.hasAccessPage) {
         items.push({
           key: "access",
@@ -227,8 +240,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       access.hasAccessPage,
       access.hasReportsAccess,
       access.isAdmin,
+      access.isFueler,
       access.shouldShowBotLink,
       djangoAdminUrl,
+      meQuery.data?.has_my_editable_fuel_records,
       meQuery.data?.telegram_linked,
     ]
   );
