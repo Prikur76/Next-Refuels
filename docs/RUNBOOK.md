@@ -17,8 +17,9 @@
   - локально: `.env.dev`;
   - прод: `.env`.
   - шаблоны:
-    - `/.env.example` — расширенный dev/local шаблон;
-    - `/.env.prod.example` — минимальный production шаблон.
+    - `/.env.example` — единый шаблон (dev и prod-секция внизу файла);
+    - `frontend/.env.example` — переменные Next.js при запуске фронта вне
+      Docker (копировать в `frontend/.env.local`).
 - Для prod SSL:
   - домен указывает на сервер;
   - порты `80/443` открыты;
@@ -40,12 +41,29 @@
   - `POSTGRES_PORT=5432`
   - `DATABASE_URL=postgresql://<user>:<pass>@db:5432/<db>`
   - `TELEGRAM_BOT_TOKEN` (или тестовый токен, если бот не проверяется)
+  - при прямых запросах браузера с `:5173` на API `:8000` раскомментируйте
+    `CORS_ALLOWED_ORIGINS` в `.env.dev` (см. комментарии в `/.env.example`).
 3. Проверить консистентность DB переменных:
   - имя БД в `DATABASE_URL` должно совпадать с `POSTGRES_DB`;
   - если используется удалённая БД, `POSTGRES_HOST` должен указывать
     на внешний хост, а не на `db`;
   - при удалённой БД у роли приложения должны быть права на создание
     таблиц в целевой схеме.
+
+Для локального Docker-стека `NEXT_PUBLIC_*` / `NEXT_INTERNAL_API_URL` задаются
+в `docker-compose.local.yml` у сервиса `frontend`; отдельный `frontend/.env`
+для compose не требуется.
+
+### 3.1.1 Локальный Next.js без Docker
+
+Если запускаете только `frontend/` (`npm run dev` / `npm run build`):
+
+1. `cp frontend/.env.example frontend/.env.local` (PowerShell:
+   `Copy-Item frontend/.env.example frontend/.env.local`).
+2. Укажите `NEXT_PUBLIC_API_URL` и при необходимости
+   `NEXT_PUBLIC_DJANGO_ADMIN_URL` (см. комментарии в `frontend/.env.example`).
+3. В `/.env.dev` для Django включите CORS на origin фронта, если API не
+   проксируется через Next.
 
 ### 3.2 Запуск smoke-теста
 
@@ -74,8 +92,9 @@
 
 Перед первым запуском:
 
-1. Создать `.env` из prod-шаблона:
-  - `cp .env.prod.example .env`
+1. Создать `.env` из шаблона репозитория:
+  - Linux/macOS: `cp .env.example .env`
+  - PowerShell: `Copy-Item .env.example .env`
 2. Заполнить минимум:
   - `SECRET_KEY`, `DOMAIN`, `LETSENCRYPT_EMAIL`;
   - `ALLOWED_HOSTS`, `EXTRA_ALLOWED_HOSTS`;
@@ -309,7 +328,7 @@
   - создать каталог, например `/opt/next-refuels`;
   - выполнить первый `git clone` репозитория в этот каталог.
 4. Подготовить секреты и окружение:
-  - создать `.env` в каталоге проекта;
+  - создать `.env` в корне проекта (шаблон: `cp .env.example .env`);
   - проверить обязательные переменные (`DOMAIN`, `SECRET_KEY`,
     DB/Redis/Telegram и т.д.);
   - убедиться, что `.env` не попадает в git.

@@ -5,7 +5,8 @@
 `Next-Refuels` — корпоративная система учёта заправок автопарка. Платформа
 состоит из:
 
-- веб-приложения на Django (ввод заправок, отчеты, админка);
+- веб-клиента на Next.js (`frontend/`: ввод, отчёты, аналитика);
+- backend на Django (Ninja API, админка, часть legacy-страниц при наличии);
 - Telegram-бота для оперативного ввода заправок;
 - фонового scheduler (синхронизация автопарка из `1C:Элемент`);
 
@@ -19,9 +20,9 @@
 
 ```mermaid
 flowchart LR
-  U["Пользователь"] --> W["Веб-интерфейс Django"]
+  U["Пользователь"] --> N["Веб Next.js"]
   U --> T["Telegram-бот"]
-  W --> API["Django backend: Ninja API + views"]
+  N --> API["Django: Ninja API + admin"]
   T --> API
   API --> DB["PostgreSQL"]
   API --> Cache["Redis cache"]
@@ -32,11 +33,13 @@ flowchart LR
 
 ### Компоненты
 
-- `frontend/` — веб-клиент на Next.js для ввода и аналитики.
+- `frontend/` — основной веб-клиент на Next.js (ввод, отчёты, аналитика,
+  прокси к API при пустом `NEXT_PUBLIC_API_URL`).
 - `next_refuels/` — Django project (settings, URLs, ASGI).
 - `core/` - доменные сущности, представления и сервисы:
   - `models/`: `User`, `Car`, `Region`, `FuelRecord`, `SystemLog`;
-  - `views.py`: веб-страницы (`/`, `/fuel/add/`, `/fuel/reports/`, ...);
+  - `views.py`: серверный рендер и маршруты, дублируемые или не перенесённые
+    во фронт (при необходимости);
   - `api.py`: HTTP API контур через `django-ninja`;
   - `refuel_bot/`: Telegram диалоги и middleware доступа;
   - `clients/`: клиенты внешних API (`element_car_client.py`);
