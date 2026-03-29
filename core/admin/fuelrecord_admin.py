@@ -191,16 +191,17 @@ class FuelRecordAdmin(admin.ModelAdmin):
     def fuel_statistics_view(self, request):
         """Расширенная статистика по заправкам"""
 
-        # Базовая статистика
-        total_stats = FuelRecord.objects.fuel_statistics()
+        # Базовая статистика (как в отчётах — только учитываемые записи)
+        base = FuelRecord.objects.active_for_reports()
+        total_stats = base.fuel_statistics()
 
         # Статистика по источникам
-        card_stats = FuelRecord.objects.by_source("CARD").fuel_statistics()
-        bot_stats = FuelRecord.objects.by_source("TGBOT").fuel_statistics()
-        truck_stats = FuelRecord.objects.by_source("TRUCK").fuel_statistics()
+        card_stats = base.by_source("CARD").fuel_statistics()
+        bot_stats = base.by_source("TGBOT").fuel_statistics()
+        truck_stats = base.by_source("TRUCK").fuel_statistics()
 
         # Статистика за последние 30 дней
-        recent_stats = FuelRecord.objects.recent(30).fuel_statistics()
+        recent_stats = base.recent(30).fuel_statistics()
 
         message = format_html(
             """
@@ -274,7 +275,7 @@ class FuelRecordAdmin(admin.ModelAdmin):
         response = ExportService.export_fuel_records_data("xlsx")
 
         # Добавляем информацию об экспорте
-        stats = FuelRecord.objects.fuel_statistics()
+        stats = FuelRecord.objects.active_for_reports().fuel_statistics()
         messages.success(
             request,
             f"✅ Успешно экспортировано {stats['total_records']} записей о заправках",

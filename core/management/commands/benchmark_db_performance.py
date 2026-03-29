@@ -48,7 +48,7 @@ class Command(BaseCommand):
         )
         self.stdout.write("")
 
-        base_qs = FuelRecord.objects.with_related_data().filter(
+        base_qs = FuelRecord.objects.active_for_reports().with_related_data().filter(
             filled_at__gte=from_dt,
             filled_at__lt=to_dt,
         )
