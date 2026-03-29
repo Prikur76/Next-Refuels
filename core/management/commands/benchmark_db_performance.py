@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Q
 from django.utils import timezone
 
-from core.models import FuelRecord, SystemLog
+from core.models import FuelRecord, Region, SystemLog, User
 
 
 class Command(BaseCommand):
@@ -52,6 +52,10 @@ class Command(BaseCommand):
             filled_at__gte=from_dt,
             filled_at__lt=to_dt,
         )
+        base_qs_filters_only = FuelRecord.objects.active_for_reports().filter(
+            filled_at__gte=from_dt,
+            filled_at__lt=to_dt,
+        )
         total_records = base_qs.count()
         deep_offset = max(0, total_records - page_limit)
 
@@ -61,15 +65,9 @@ class Command(BaseCommand):
                 lambda: base_qs.fuel_statistics(),
             ),
             (
-                "reports.filters employees distinct",
-                lambda: list(
-                    base_qs.filter(employee__isnull=False)
-                    .values_list(
-                        "employee__first_name",
-                        "employee__last_name",
-                        "employee__username",
-                    )
-                    .distinct()
+                "reports.filters (1×scan + User/Region)",
+                lambda: Command._bench_reports_filters_like_api(
+                    base_qs_filters_only,
                 ),
             ),
             (
@@ -115,6 +113,45 @@ class Command(BaseCommand):
             "Hint: compare this report before/after changes and "
             "on a production-like data snapshot."
         )
+        self.stdout.write(
+            "Note: deep offset scales poorly; prefer cursor pagination "
+            "for large journals."
+        )
+
+    @staticmethod
+    def _bench_reports_filters_like_api(qs):
+        """Как /api/v1/reports/filters: один проход по строкам, User/Region."""
+        employee_id_set: set[int] = set()
+        historical_region_id_set: set[int] = set()
+        car_region_id_set: set[int] = set()
+        for row in qs.values_list(
+            "employee_id",
+            "historical_region_id",
+            "car__region_id",
+        ).iterator(chunk_size=2048):
+            emp_id, hist_rid, car_rid = row
+            if emp_id is not None:
+                employee_id_set.add(emp_id)
+            if hist_rid is not None:
+                historical_region_id_set.add(hist_rid)
+            if car_rid is not None:
+                car_region_id_set.add(car_rid)
+        if employee_id_set:
+            list(
+                User.objects.filter(pk__in=employee_id_set).values_list(
+                    "first_name",
+                    "last_name",
+                    "username",
+                ),
+            )
+        region_pks = historical_region_id_set | car_region_id_set
+        if region_pks:
+            list(
+                Region.objects.filter(pk__in=region_pks).values_list(
+                    "name",
+                    flat=True,
+                ),
+            )
 
     @staticmethod
     def _measure(fn, iterations: int) -> dict:
