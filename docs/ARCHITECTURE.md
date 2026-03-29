@@ -40,7 +40,8 @@ flowchart LR
   - `models/`: `User`, `Car`, `Region`, `FuelRecord`, `SystemLog`;
   - `views.py`: серверный рендер и маршруты, дублируемые или не перенесённые
     во фронт (при необходимости);
-  - `api.py`: HTTP API контур через `django-ninja`;
+  - `api.py`: HTTP API через `django-ninja` (перечень маршрутов и схем —
+    `docs/SPEC.md`, § 9);
   - `refuel_bot/`: Telegram диалоги и middleware доступа;
   - `clients/`: клиенты внешних API (`element_car_client.py`);
   - `services/`: бизнес-логика и интеграции (например, `fuel_service`).

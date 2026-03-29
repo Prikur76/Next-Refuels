@@ -219,17 +219,97 @@ DROP TABLE IF EXISTS public.__perm_test;
 - `/health/` - health-check JSON;
 - `/admin/` - административный интерфейс.
 
-### API v1 (клиент Next.js и backend)
+### API v1 (django-ninja и смежные view)
 
-- `/api/v1/auth/me` - профиль текущего пользователя (включая
-  `telegram_linked`);
-- `/api/v1/auth/telegram/link-code` - выдача одноразового кода привязки Telegram;
-- `/api/v1/cars` - поиск активных автомобилей;
-- `/api/v1/fuel-records` - создание записи заправки;
-- `/api/v1/fuel-records/recent` - последние записи;
-- `/api/v1/reports/summary` - агрегированная сводка;
-- `/api/v1/reports/records` - журнал с фильтрами и пагинацией;
-- `/api/v1/reports/export/csv`, `/api/v1/reports/export/xlsx` - экспорт отчетов.
+Префикс Ninja: `path("api/v1/", api.urls)` в `next_refuels/urls.py`. Объект API:
+`core.api.api` (`NinjaAPI`, title `Next-Refuels API`, version `1.0.0`).
+Интерактивная OpenAPI-схема (если включена настройками Ninja по умолчанию):
+`/api/v1/docs`.
+
+Все перечисленные ниже методы, кроме экспорта CSV/XLSX, реализованы в
+`core/api.py`. Экспорт отчётов — отдельные Django-view в `core/api_views.py`
+(те же query-параметры фильтров, что у отчётов в вебе).
+
+Общие правила:
+
+- авторизация: session cookie (после логина); без сессии — `401`;
+- для мутаций из браузера нужен CSRF: сначала `GET /api/v1/auth/csrf`;
+- часовой пояс клиента для части сценариев заправщика: заголовок
+  `X-Client-Timezone` (IANA, например `Europe/Moscow`); пустое значение —
+  используется `TIME_ZONE` Django.
+
+#### Auth
+
+| Метод | Путь | Назначение |
+|-------|------|------------|
+| GET | `/api/v1/auth/csrf` | Выставить CSRF cookie (`ensure_csrf_cookie`), тело `{"ok": true}`. |
+| GET | `/api/v1/auth/me` | Профиль: `UserMeOut` (в т.ч. `telegram_linked`, `groups`, `app_timezone`, `has_my_editable_fuel_records`). Query: `client_tz` (опционально). |
+| POST | `/api/v1/auth/telegram/link-code` | Одноразовый код привязки Telegram (`TelegramLinkCodeOut`). Требуется право ввода. |
+| POST | `/api/v1/auth/password/setup` | Первая смена пароля (`PasswordSetupIn` → `PasswordSetupOut`), только если `must_change_password`. |
+
+#### Автомобили и заправки
+
+| Метод | Путь | Назначение |
+|-------|------|------------|
+| GET | `/api/v1/cars` | Список активных авто (`CarOut[]`). Query: `query` (поиск по госномеру), `limit` (1…100, по умолчанию 20). |
+| POST | `/api/v1/fuel-records` | Создание заправки (`FuelRecordIn` → `FuelRecordOut`). |
+| GET | `/api/v1/fuel-records/recent` | Последние записи (глобально). Query: `limit`. |
+| GET | `/api/v1/fuel-records/mine` | Записи заправщика за скользящее окно (см. `FuelService`). Только группа заправщика. |
+| PATCH | `/api/v1/fuel-records/{record_id}` | Частичное обновление (`FuelRecordPatchIn` → `FuelRecordOut`). |
+
+Тела запросов (схемы Ninja в `core/api.py`):
+
+- **`FuelRecordIn`**: `car_id`, `liters`, `fuel_type` (`GASOLINE` \| `DIESEL`),
+  `source` (`CARD` \| `TGBOT` \| `TRUCK`), `notes` (строка, по умолчанию пустая).
+- **`FuelRecordPatchIn`**: все поля опциональны: `car_id`, `liters`,
+  `fuel_type`, `source`, `notes`, `filled_at` (datetime), `reporting_status`
+  (`ACTIVE` \| `EXCLUDED_DELETION` — см. `FuelRecord.ReportingStatus`).
+
+Ответ **`FuelRecordOut`**: идентификаторы, `car_state_number`,
+`car_is_fuel_tanker`, объём, тип топлива, источник, `filled_at` (ISO),
+`employee_name`, `region_name`, `reporting_status`, `notes`.
+
+#### Отчёты (журнал и сводки)
+
+Общие query-фильтры (где применимо): `from_date`, `to_date` (date),
+`region_id`, `region` (подстрока имени), `employee`, `car_id`,
+`car_state_number`, `source`. Для не-админов `region_id` нормализуется
+по scope пользователя (`FuelService.normalized_reports_region_id`).
+
+| Метод | Путь | Назначение |
+|-------|------|------------|
+| GET | `/api/v1/reports/summary` | Сводка: `total_records`, `total_liters`, `avg_liters` (`SummaryOut`). |
+| GET | `/api/v1/reports/filters` | Списки для фильтров UI: `employees`, `regions` (`ReportsFiltersOut`). |
+| GET | `/api/v1/reports/records` | Страница журнала (`RecordsPageOut`: `items`, `total`, `has_next`, `next_cursor`). Пагинация: `offset` + `limit` (до 200) **или** `cursor` (base64, при `cursor` поле `total` может быть 0). |
+| GET | `/api/v1/reports/access-events` | Аудит access-действий (`AccessLogOut[]`). Query: `limit` (до 200). Не-админы видят только свои события. |
+| GET | `/api/v1/reports/export/csv` | Скачивание CSV (не Ninja). |
+| GET | `/api/v1/reports/export/xlsx` | Скачивание XLSX (не Ninja). |
+
+#### Управление доступом (scoped RBAC)
+
+Базовый префикс `/api/v1/access/`. Детали прав — `UserAccessService`.
+
+| Метод | Путь | Назначение |
+|-------|------|------------|
+| GET | `/api/v1/access/users` | Список пользователей. Query: `show_all` (включая неактивных). |
+| POST | `/api/v1/access/users` | Создание заправщика (`AccessUserCreateIn` → `AccessUserCreateOut`). |
+| PATCH | `/api/v1/access/users/{user_id}` | Активация/деактивация (`AccessStatusPatchIn`). |
+| PATCH | `/api/v1/access/users/{user_id}/role` | Назначение роли (`AccessRolePatchIn`: `Заправщик` \| `Менеджер` \| `Администратор`). |
+| POST | `/api/v1/access/users/{user_id}/reset-password` | Сброс пароля (временный в ответе `AccessPasswordOut`). |
+| PATCH | `/api/v1/access/users/{user_id}/password` | Задать пароль или сгенерировать временный (`AccessPasswordPatchIn`). |
+| PATCH | `/api/v1/access/users/{user_id}/scope` | Смена региона scope (`AccessScopePatchIn`). |
+| PATCH | `/api/v1/access/users/{user_id}/profile` | Профиль: ФИО, email, телефон, регион (`AccessUserProfilePatchIn`). |
+| GET | `/api/v1/access/regions` | Справочник регионов для UI (`RegionOut[]`). |
+
+#### Аналитика
+
+| Метод | Путь | Назначение |
+|-------|------|------------|
+| GET | `/api/v1/analytics/stats` | Дашборд (`AnalyticsDataOut` в `core/schemas.py`): `by_day`, `by_day_region`, `refuel_sources`, `refuel_channels`, `recent_records`, `by_employee`, `by_car`, `by_car_fuel_tankers`. Query: `start_date`, `end_date`, `region_id`. |
+| GET | `/api/v1/analytics/export` | Выгрузка XLSX по тем же фильтрам; бинарный ответ `Content-Disposition: attachment`. |
+
+Семантика срезов аналитики согласована с `docs/ARCHITECTURE.md` (раздел про
+дашборд и `_analytics_dashboard_channel_records_qs`).
 
 ### Команды управления
 
@@ -271,8 +351,8 @@ DROP TABLE IF EXISTS public.__perm_test;
 
 ### P2 (развитие)
 
-- Добавить API-контур (например, через django-ninja) для интеграций и внешней
-аналитики.
+- Расширить публичный/партнёрский API (webhooks, отдельные токены) поверх
+  текущего контура django-ninja.
 - Добавить метрики/наблюдаемость (latency, error rate, sync duration).
 - Расширить ролевую модель и аудит событий.
 
@@ -300,11 +380,13 @@ DROP TABLE IF EXISTS public.__perm_test;
 - Реализован scoped RBAC для менеджеров:
   - менеджер управляет пользователями только в пределах своего региона;
   - администратор имеет глобальный охват.
-- Добавлены access-management API:
-  - `/api/v1/access/users` (list/create),
-  - `/api/v1/access/users/{id}` (activate/deactivate),
-  - `/api/v1/access/users/{id}/assign-fueler`,
-  - `/api/v1/access/users/{id}/reset-password`.
+- Добавлены access-management API (см. таблицу в разделе 9):
+  - `GET/POST /api/v1/access/users`,
+  - `PATCH /api/v1/access/users/{id}` (активность),
+  - `PATCH /api/v1/access/users/{id}/role`,
+  - `POST /api/v1/access/users/{id}/reset-password`,
+  - `PATCH .../password`, `PATCH .../scope`, `PATCH .../profile`,
+  - `GET /api/v1/access/regions`.
 - Добавлен аудит access-событий и endpoint
   `/api/v1/reports/access-events`.
 - В веб-клиенте добавлен раздел `Доступ` для менеджеров/админов.

@@ -125,11 +125,13 @@ polling локально — `python manage.py runbot` с валидным
     `python manage.py test --noinput`;
   - если тесты запускаются на Postgres, убедитесь, что user приложения
     может создавать тестовую БД и выполнять миграции;
-- проверить, что ключевые API endpoints доступны:
+- проверить, что ключевые API endpoints доступны (полная матрица —
+  `docs/SPEC.md`, § 9):
   - `/api/v1/auth/csrf`
   - `/api/v1/auth/me`
   - `/api/v1/fuel-records`
   - `/api/v1/reports/summary`
+  - `/api/v1/analytics/stats`
 
 ## Как запускать тесты локально (рекомендуется)
 
