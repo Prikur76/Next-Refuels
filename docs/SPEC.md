@@ -223,8 +223,14 @@ DROP TABLE IF EXISTS public.__perm_test;
 
 Префикс Ninja: `path("api/v1/", api.urls)` в `next_refuels/urls.py`. Объект API:
 `core.api.api` (`NinjaAPI`, title `Next-Refuels API`, version `1.0.0`).
-Интерактивная OpenAPI-схема (если включена настройками Ninja по умолчанию):
-`/api/v1/docs`.
+
+**Swagger / OpenAPI:** интерактивная UI — `GET /api/v1/docs` (например
+`http://localhost:8000/api/v1/docs` при локальном `runserver`). В схеме
+заданы: общее описание API и теги (`auth`, `fuel`, `reports`, `access`,
+`analytics`), у операций — `summary` и `description`, у параметров и полей
+схем — подсказки через `Query`, `Path`, `Body` и `Field(..., description=)`
+в `core/api.py` и `core/schemas.py`. Скачивание аналитики XLSX документируется
+отдельным ответом `200` с `format: binary` у `GET /api/v1/analytics/export`.
 
 Все перечисленные ниже методы, кроме экспорта CSV/XLSX, реализованы в
 `core/api.py`. Экспорт отчётов — отдельные Django-view в `core/api_views.py`

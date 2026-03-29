@@ -11,12 +11,11 @@ from django.contrib.auth import update_session_auth_hash
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q, Sum, Value
 from django.db.models.functions import Coalesce, Concat, TruncDay
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
-from ninja import NinjaAPI, Schema
+from ninja import Body, Field, NinjaAPI, Path, Query, Schema
 from ninja.errors import HttpError
-from pydantic import Field
 
 from core.models import Car, FuelRecord, Region, SystemLog, User
 from core.schemas import (
@@ -42,96 +41,212 @@ from core.services.fuel_service import (
 from core.services.telegram_link_service import TelegramLinkService
 from core.utils.logging import log_access_event, log_action
 
+_API_DESCRIPTION = """
+REST API веб-клиента Next-Refuels (django-ninja, OpenAPI 3).
+
+**Авторизация:** cookie-сессия Django. Перед мутациями из браузера вызовите
+`GET /api/v1/auth/csrf`, затем передавайте CSRF-токен (заголовок или форма, см.
+настройки Django).
+
+**Часовой пояс:** заголовок `X-Client-Timezone` (IANA, например
+`Europe/Moscow`) учитывается в операциях заправщика; пустое значение —
+часовой пояс сервера (`TIME_ZONE`).
+""".strip()
+
+_OPENAPI_TAGS = [
+    {
+        "name": "auth",
+        "description": (
+            "CSRF, профиль, привязка Telegram, первичная смена пароля"
+        ),
+    },
+    {
+        "name": "fuel",
+        "description": "Поиск автомобилей и записи заправок",
+    },
+    {
+        "name": "reports",
+        "description": "Сводки, журнал, фильтры, журнал событий доступа",
+    },
+    {
+        "name": "access",
+        "description": "Управление пользователями, ролями и scope (RBAC)",
+    },
+    {
+        "name": "analytics",
+        "description": "Дашборд аналитики и выгрузка в Excel",
+    },
+]
+
 
 def _user_groups_with_superuser(user) -> list[str]:
     groups = list(user.groups.values_list("name", flat=True))
-    if bool(getattr(user, "is_superuser", False)) and "Администратор" not in groups:
+    if (
+        bool(getattr(user, "is_superuser", False))
+        and "Администратор" not in groups
+    ):
         groups.append("Администратор")
     return groups
 
 
+class CsrfOkOut(Schema):
+    """Ответ endpoint выставления CSRF-cookie."""
+
+    ok: bool = Field(..., description="Всегда true при успешном ответе")
+
+
 class UserMeOut(Schema):
-    id: int
-    username: str
-    full_name: str
-    groups: list[str]
-    auth_provider: str
-    mfa_policy_enabled: bool
-    must_change_password: bool
-    telegram_linked: bool
-    has_my_editable_fuel_records: bool = False
-    region_id: Optional[int] = None
-    app_timezone: str
+    """Профиль текущего пользователя (SPA / бот-навигация)."""
+
+    id: int = Field(..., description="ID пользователя")
+    username: str = Field(..., description="Логин")
+    full_name: str = Field(..., description="ФИО или username")
+    groups: list[str] = Field(..., description="Имена групп Django (роли)")
+    auth_provider: str = Field(
+        ..., description="Провайдер входа (например local)"
+    )
+    mfa_policy_enabled: bool = Field(..., description="Политика MFA включена")
+    must_change_password: bool = Field(
+        ...,
+        description="Требуется смена пароля при первом входе",
+    )
+    telegram_linked: bool = Field(
+        ...,
+        description="True, если к учётной записи привязан Telegram",
+    )
+    has_my_editable_fuel_records: bool = Field(
+        False,
+        description="Есть ли у заправщика редактируемые записи за окно 24ч",
+    )
+    region_id: Optional[int] = Field(None, description="Регион пользователя")
+    app_timezone: str = Field(
+        ...,
+        description="IANA-пояс приложения (настройка сервера)",
+    )
 
 
 class TelegramLinkCodeOut(Schema):
-    code: str
-    expires_at: str
-    ttl_minutes: int
-    bot_link_with_start: str
-    share_message: str
+    """Одноразовый код и подсказки для привязки Telegram."""
+
+    code: str = Field(..., description="Токен для /start в боте")
+    expires_at: str = Field(..., description="Срок действия (ISO 8601)")
+    ttl_minutes: int = Field(..., description="TTL кода в минутах")
+    bot_link_with_start: str = Field(
+        ...,
+        description="Ссылка t.me с deep-link",
+    )
+    share_message: str = Field(
+        ..., description="Текст инструкции для пользователя"
+    )
 
 
 class CarOut(Schema):
+    """Активный автомобиль для выбора при заправке."""
+
     id: int
-    state_number: str
-    model: str
-    code: str
-    region_name: Optional[str] = None
+    state_number: str = Field(..., description="Госномер")
+    model: str = Field(..., description="Модель")
+    code: str = Field(..., description="Внутренний код из 1С")
+    region_name: Optional[str] = Field(None, description="Регион ТС")
 
 
 class FuelRecordIn(Schema):
-    car_id: int
-    liters: Decimal
-    fuel_type: str = Field(pattern="^(GASOLINE|DIESEL)$")
-    source: str = Field(pattern="^(CARD|TGBOT|TRUCK)$")
-    notes: str = ""
+    """Тело создания записи заправки."""
+
+    car_id: int = Field(..., description="ID автомобиля")
+    liters: Decimal = Field(..., description="Объём в литрах")
+    fuel_type: str = Field(
+        ...,
+        description="GASOLINE — бензин, DIESEL — дизель",
+        pattern="^(GASOLINE|DIESEL)$",
+    )
+    source: str = Field(
+        ...,
+        description="CARD — карта, TGBOT — бот, TRUCK — топливозаправщик",
+        pattern="^(CARD|TGBOT|TRUCK)$",
+    )
+    notes: str = Field("", description="Комментарий")
 
 
 class FuelRecordOut(Schema):
+    """Запись заправки в ответах API."""
+
     id: int
     car_id: int
     car_state_number: str
-    car_is_fuel_tanker: bool = False
+    car_is_fuel_tanker: bool = Field(
+        False,
+        description="Признак топливозаправщика у ТС",
+    )
     liters: Decimal
     fuel_type: str
     source: str
-    filled_at: str
+    filled_at: str = Field(..., description="Дата-время заправки (ISO 8601)")
     employee_name: str
-    region_name: Optional[str] = None
-    reporting_status: str = "ACTIVE"
+    region_name: Optional[str] = Field(
+        None,
+        description="Исторический регион записи",
+    )
+    reporting_status: str = Field(
+        "ACTIVE",
+        description="ACTIVE или EXCLUDED_DELETION",
+    )
     notes: str = ""
 
 
 class FuelRecordPatchIn(Schema):
-    car_id: Optional[int] = None
-    liters: Optional[Decimal] = None
-    fuel_type: Optional[str] = None
-    source: Optional[str] = None
-    notes: Optional[str] = None
-    filled_at: Optional[datetime] = None
-    reporting_status: Optional[str] = None
+    """Частичное обновление заправки; передайте только изменяемые поля."""
+
+    car_id: Optional[int] = Field(None, description="ID автомобиля")
+    liters: Optional[Decimal] = Field(None, description="Объём, л")
+    fuel_type: Optional[str] = Field(None, description="GASOLINE или DIESEL")
+    source: Optional[str] = Field(None, description="CARD, TGBOT или TRUCK")
+    notes: Optional[str] = Field(None, description="Комментарий")
+    filled_at: Optional[datetime] = Field(
+        None,
+        description="Дата-время заправки",
+    )
+    reporting_status: Optional[str] = Field(
+        None,
+        description="ACTIVE или EXCLUDED_DELETION",
+    )
 
 
 class SummaryOut(Schema):
-    total_records: int
-    total_liters: float
-    avg_liters: float
+    """Сводка по отфильтрованным записям."""
+
+    total_records: int = Field(..., description="Количество записей")
+    total_liters: float = Field(..., description="Сумма литров")
+    avg_liters: float = Field(..., description="Средний объём на запись")
 
 
 class ReportsFiltersOut(Schema):
-    employees: list[str]
-    regions: list[str]
+    """Значения для выпадающих фильтров отчёта."""
+
+    employees: list[str] = Field(
+        ..., description="Сотрудники (отображаемые имена)"
+    )
+    regions: list[str] = Field(..., description="Названия регионов")
 
 
 class RecordsPageOut(Schema):
-    items: list[FuelRecordOut]
-    total: int
-    has_next: bool = False
-    next_cursor: Optional[str] = None
+    """Страница журнала заправок."""
+
+    items: list[FuelRecordOut] = Field(..., description="Строки страницы")
+    total: int = Field(
+        ...,
+        description="Всего записей (при пагинации без cursor)",
+    )
+    has_next: bool = Field(False, description="Есть следующая страница")
+    next_cursor: Optional[str] = Field(
+        None,
+        description="Курсор для следующего запроса (base64)",
+    )
 
 
 class AccessUserOut(Schema):
+    """Пользователь в разделе управления доступом."""
+
     id: int
     username: str
     first_name: str
@@ -141,67 +256,116 @@ class AccessUserOut(Schema):
     is_active: bool
     region_id: Optional[int]
     region_name: Optional[str]
-    groups: list[str]
+    groups: list[str] = Field(..., description="Текущие роли")
 
 
 class AccessUserCreateIn(Schema):
-    email: str = Field(min_length=1)
-    first_name: str = ""
-    last_name: str = ""
-    phone: str = ""
-    password: Optional[str] = None
-    region_id: Optional[int] = None
-    activate: bool = True
+    """Создание пользователя с ролью заправщика."""
+
+    email: str = Field(..., min_length=1, description="Email (база логина)")
+    first_name: str = Field("", description="Имя")
+    last_name: str = Field("", description="Фамилия")
+    phone: str = Field("", description="Телефон")
+    password: Optional[str] = Field(
+        None,
+        description="Пароль; иначе будет сгенерирован",
+    )
+    region_id: Optional[int] = Field(None, description="Регион (scope)")
+    activate: bool = Field(True, description="Сразу активен")
 
 
 class AccessStatusPatchIn(Schema):
-    is_active: bool
+    """Включение или отключение учётной записи."""
+
+    is_active: bool = Field(..., description="Активен ли пользователь")
 
 
 class AccessPasswordOut(Schema):
+    """Результат сброса или смены пароля."""
+
     id: int
     username: str
-    temporary_password: Optional[str] = None
+    temporary_password: Optional[str] = Field(
+        None,
+        description="Временный пароль (если генерировался)",
+    )
 
 
 class AccessUserCreateOut(Schema):
+    """Результат создания пользователя."""
+
     id: int
     username: str
-    temporary_password: Optional[str] = None
+    temporary_password: Optional[str] = Field(
+        None,
+        description="Если пароль был сгенерирован",
+    )
 
 
 class AccessPasswordPatchIn(Schema):
-    password: Optional[str] = None
-    generate_temporary: bool = False
+    """Установка пароля вручную или генерация временного."""
+
+    password: Optional[str] = Field(None, description="Новый пароль")
+    generate_temporary: bool = Field(
+        False,
+        description="Сгенерировать временный пароль",
+    )
 
 
 class PasswordSetupIn(Schema):
-    password: Optional[str] = None
-    generate: bool = False
+    """Первая смена пароля после входа с флагом must_change_password."""
+
+    password: Optional[str] = Field(
+        None, description="Новый пароль (≥8 символов)"
+    )
+    generate: bool = Field(
+        False,
+        description="Сгенерировать пароль вместо ввода",
+    )
 
 
 class PasswordSetupOut(Schema):
+    """Состояние после первичной смены пароля."""
+
     must_change_password: bool
-    generated_password: Optional[str] = None
+    generated_password: Optional[str] = Field(
+        None,
+        description="Если запрошена генерация",
+    )
 
 
 class AccessLogOut(Schema):
+    """Запись журнала событий доступа."""
+
     id: int
     actor_username: str
-    action: str
+    action: str = Field(..., description="Код события (префикс access_)")
     details: str
-    created_at: str
+    created_at: str = Field(..., description="Время события (ISO 8601)")
 
 
 class AccessRolePatchIn(Schema):
-    role: str = Field(pattern="^(Заправщик|Менеджер|Администратор)$")
+    """Назначение одной из ролей доступа."""
+
+    role: str = Field(
+        ...,
+        description="Заправщик, Менеджер или Администратор",
+        pattern="^(Заправщик|Менеджер|Администратор)$",
+    )
 
 
 class AccessScopePatchIn(Schema):
-    region_id: Optional[int] = None
+    """Изменение регионального scope пользователя."""
+
+    region_id: Optional[int] = Field(
+        None,
+        description="ID региона; null — по правилам сервиса",
+    )
 
 
 class AccessUserProfilePatchIn(Schema):
+    """Частичное обновление профиля сотрудника."""
+
     email: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -210,11 +374,19 @@ class AccessUserProfilePatchIn(Schema):
 
 
 class RegionOut(Schema):
+    """Регион для форм управления доступом."""
+
     id: int
     name: str
 
 
-api = NinjaAPI(title="Next-Refuels API", version="1.0.0", urls_namespace="api")
+api = NinjaAPI(
+    title="Next-Refuels API",
+    version="1.0.0",
+    urls_namespace="api",
+    description=_API_DESCRIPTION,
+    openapi_extra={"tags": _OPENAPI_TAGS},
+)
 
 
 def _ensure_auth(request: HttpRequest):
@@ -348,15 +520,38 @@ def _access_user_to_schema(user) -> AccessUserOut:
     )
 
 
-@api.get("/auth/csrf")
+@api.get(
+    "/auth/csrf",
+    response=CsrfOkOut,
+    tags=["auth"],
+    summary="Получить CSRF-cookie",
+    description=(
+        "Выставляет cookie для защиты от CSRF. Вызовите перед первым "
+        "изменяющим запросом из SPA."
+    ),
+)
 @ensure_csrf_cookie
 def auth_csrf(request: HttpRequest):
-    """Выставляет CSRF cookie для SPA-клиента."""
-    return JsonResponse({"ok": True})
+    return {"ok": True}
 
 
-@api.get("/auth/me", response=UserMeOut)
-def auth_me(request: HttpRequest, client_tz: Optional[str] = None):
+@api.get(
+    "/auth/me",
+    response=UserMeOut,
+    tags=["auth"],
+    summary="Текущий пользователь",
+    description="Профиль, роли, флаги MFA и привязки Telegram.",
+)
+def auth_me(
+    request: HttpRequest,
+    client_tz: Optional[str] = Query(
+        None,
+        description=(
+            "Часовой пояс клиента (IANA) для расчёта "
+            "has_my_editable_fuel_records; некорректное значение игнорируется"
+        ),
+    ),
+):
     _ensure_auth(request)
     groups = _user_groups_with_superuser(request.user)
     try:
@@ -382,7 +577,16 @@ def auth_me(request: HttpRequest, client_tz: Optional[str] = None):
     )
 
 
-@api.post("/auth/telegram/link-code", response=TelegramLinkCodeOut)
+@api.post(
+    "/auth/telegram/link-code",
+    response=TelegramLinkCodeOut,
+    tags=["auth"],
+    summary="Код привязки Telegram",
+    description=(
+        "Одноразовый токен для команды /start в боте. "
+        "Нужны права ввода заправок."
+    ),
+)
 def create_telegram_link_code(request: HttpRequest):
     _ensure_auth(request)
     FuelService.ensure_input_access(request.user)
@@ -429,7 +633,15 @@ def create_telegram_link_code(request: HttpRequest):
     )
 
 
-@api.post("/auth/password/setup", response=PasswordSetupOut)
+@api.post(
+    "/auth/password/setup",
+    response=PasswordSetupOut,
+    tags=["auth"],
+    summary="Первичная смена пароля",
+    description=(
+        "Доступно только при must_change_password=true у пользователя."
+    ),
+)
 def auth_password_setup(request: HttpRequest, payload: PasswordSetupIn):
     _ensure_auth(request)
     if not request.user.must_change_password:
@@ -461,8 +673,23 @@ def auth_password_setup(request: HttpRequest, payload: PasswordSetupIn):
     )
 
 
-@api.get("/cars", response=list[CarOut])
-def list_cars(request: HttpRequest, query: str = "", limit: int = 20):
+@api.get(
+    "/cars",
+    response=list[CarOut],
+    tags=["fuel"],
+    summary="Поиск автомобилей",
+    description="Активные ТС, доступные для заправки.",
+)
+def list_cars(
+    request: HttpRequest,
+    query: str = Query("", description="Подстрока госномера"),
+    limit: int = Query(
+        20,
+        ge=1,
+        le=100,
+        description="Максимум записей в ответе",
+    ),
+):
     _ensure_auth(request)
     FuelService.ensure_input_access(request.user)
     safe_limit = max(1, min(limit, 100))
@@ -481,7 +708,13 @@ def list_cars(request: HttpRequest, query: str = "", limit: int = 20):
     ]
 
 
-@api.post("/fuel-records", response=FuelRecordOut)
+@api.post(
+    "/fuel-records",
+    response=FuelRecordOut,
+    tags=["fuel"],
+    summary="Создать заправку",
+    description="Новая запись от текущего пользователя.",
+)
 def create_fuel_record(request: HttpRequest, payload: FuelRecordIn):
     _ensure_auth(request)
     FuelService.ensure_input_access(request.user)
@@ -510,15 +743,33 @@ def create_fuel_record(request: HttpRequest, payload: FuelRecordIn):
     return _record_to_schema(record)
 
 
-@api.get("/fuel-records/recent", response=list[FuelRecordOut])
-def recent_fuel_records(request: HttpRequest, limit: int = 30):
+@api.get(
+    "/fuel-records/recent",
+    response=list[FuelRecordOut],
+    tags=["fuel"],
+    summary="Последние заправки",
+    description="Глобальная лента последних записей (права ввода).",
+)
+def recent_fuel_records(
+    request: HttpRequest,
+    limit: int = Query(30, ge=1, le=500, description="Число записей"),
+):
     _ensure_auth(request)
     FuelService.ensure_input_access(request.user)
     records = FuelService.get_recent_records(limit=limit)
     return [_record_to_schema(record) for record in records]
 
 
-@api.get("/fuel-records/mine", response=list[FuelRecordOut])
+@api.get(
+    "/fuel-records/mine",
+    response=list[FuelRecordOut],
+    tags=["fuel"],
+    summary="Мои заправки (редактируемое окно)",
+    description=(
+        "Только роль Заправщик. Учитывается заголовок X-Client-Timezone "
+        "(см. описание API)."
+    ),
+)
 def my_fuel_records(request: HttpRequest):
     _ensure_auth(request)
     if not FuelService._is_fueler(request.user):
@@ -528,9 +779,20 @@ def my_fuel_records(request: HttpRequest):
     return [_record_to_schema(rec) for rec in qs]
 
 
-@api.patch("/fuel-records/{record_id}", response=FuelRecordOut)
+@api.patch(
+    "/fuel-records/{record_id}",
+    response=FuelRecordOut,
+    tags=["fuel"],
+    summary="Обновить заправку",
+    description=(
+        "Частичное обновление; нужен заголовок X-Client-Timezone "
+        "для правил заправщика."
+    ),
+)
 def patch_fuel_record(
-    request: HttpRequest, record_id: int, payload: FuelRecordPatchIn
+    request: HttpRequest,
+    record_id: int = Path(..., description="ID записи заправки"),
+    payload: FuelRecordPatchIn = Body(...),
 ):
     _ensure_auth(request)
     FuelService.ensure_input_access(request.user)
@@ -574,17 +836,47 @@ def patch_fuel_record(
     return _record_to_schema(record)
 
 
-@api.get("/reports/summary", response=SummaryOut)
+@api.get(
+    "/reports/summary",
+    response=SummaryOut,
+    tags=["reports"],
+    summary="Сводка по заправкам",
+    description=(
+        "Агрегаты по отфильтрованным записям. Для менеджеров region_id "
+        "ограничивается scope."
+    ),
+)
 def reports_summary(
     request: HttpRequest,
-    from_date: Optional[date] = None,
-    to_date: Optional[date] = None,
-    region_id: Optional[int] = None,
-    region: Optional[str] = None,
-    employee: Optional[str] = None,
-    car_id: Optional[int] = None,
-    car_state_number: Optional[str] = None,
-    source: Optional[str] = None,
+    from_date: Optional[date] = Query(
+        None,
+        description="Начало периода (дата заправки, включительно)",
+    ),
+    to_date: Optional[date] = Query(
+        None,
+        description="Конец периода (дата заправки, включительно)",
+    ),
+    region_id: Optional[int] = Query(
+        None,
+        description="Исторический регион (ID)",
+    ),
+    region: Optional[str] = Query(
+        None,
+        description="Подстрока в названии региона",
+    ),
+    employee: Optional[str] = Query(
+        None,
+        description="Подстрока ФИО или логина сотрудника",
+    ),
+    car_id: Optional[int] = Query(None, description="ID автомобиля"),
+    car_state_number: Optional[str] = Query(
+        None,
+        description="Подстрока госномера",
+    ),
+    source: Optional[str] = Query(
+        None,
+        description="Способ: CARD, TGBOT или TRUCK",
+    ),
 ):
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
@@ -612,12 +904,27 @@ def reports_summary(
     )
 
 
-@api.get("/reports/filters", response=ReportsFiltersOut)
+@api.get(
+    "/reports/filters",
+    response=ReportsFiltersOut,
+    tags=["reports"],
+    summary="Значения для фильтров отчёта",
+    description="Списки сотрудников и регионов в рамках выборки.",
+)
 def reports_filters(
     request: HttpRequest,
-    from_date: Optional[date] = None,
-    to_date: Optional[date] = None,
-    source: Optional[str] = None,
+    from_date: Optional[date] = Query(
+        None,
+        description="Начало периода (дата заправки)",
+    ),
+    to_date: Optional[date] = Query(
+        None,
+        description="Конец периода (дата заправки)",
+    ),
+    source: Optional[str] = Query(
+        None,
+        description="Ограничить выборку способом заправки",
+    ),
 ):
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
@@ -674,20 +981,41 @@ def reports_filters(
     )
 
 
-@api.get("/reports/records", response=RecordsPageOut)
+@api.get(
+    "/reports/records",
+    response=RecordsPageOut,
+    tags=["reports"],
+    summary="Журнал заправок",
+    description=(
+        "Пагинация: либо offset/limit (total заполнен), либо cursor "
+        "(ключевой набор после курсора; total может быть 0)."
+    ),
+)
 def reports_records(
     request: HttpRequest,
-    from_date: Optional[date] = None,
-    to_date: Optional[date] = None,
-    region_id: Optional[int] = None,
-    region: Optional[str] = None,
-    employee: Optional[str] = None,
-    car_id: Optional[int] = None,
-    car_state_number: Optional[str] = None,
-    source: Optional[str] = None,
-    cursor: Optional[str] = None,
-    offset: int = 0,
-    limit: int = 50,
+    from_date: Optional[date] = Query(
+        None,
+        description="Начало периода (дата заправки)",
+    ),
+    to_date: Optional[date] = Query(
+        None,
+        description="Конец периода (дата заправки)",
+    ),
+    region_id: Optional[int] = Query(None, description="Исторический регион"),
+    region: Optional[str] = Query(None, description="Подстрока региона"),
+    employee: Optional[str] = Query(None, description="Сотрудник"),
+    car_id: Optional[int] = Query(None, description="ID автомобиля"),
+    car_state_number: Optional[str] = Query(
+        None,
+        description="Подстрока госномера",
+    ),
+    source: Optional[str] = Query(None, description="CARD, TGBOT или TRUCK"),
+    cursor: Optional[str] = Query(
+        None,
+        description="Курсор из предыдущего ответа (next_cursor)",
+    ),
+    offset: int = Query(0, ge=0, description="Смещение (без cursor)"),
+    limit: int = Query(50, ge=1, le=200, description="Размер страницы"),
 ):
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
@@ -753,8 +1081,20 @@ def reports_records(
     )
 
 
-@api.get("/access/users", response=list[AccessUserOut])
-def access_users(request: HttpRequest, show_all: bool = False):
+@api.get(
+    "/access/users",
+    response=list[AccessUserOut],
+    tags=["access"],
+    summary="Список пользователей доступа",
+    description="Учитывается scoped RBAC актора.",
+)
+def access_users(
+    request: HttpRequest,
+    show_all: bool = Query(
+        False,
+        description="Показать в том числе неактивных",
+    ),
+):
     _ensure_auth(request)
     users = UserAccessService.list_users_for_actor(
         request.user,
@@ -763,8 +1103,19 @@ def access_users(request: HttpRequest, show_all: bool = False):
     return [_access_user_to_schema(user) for user in users]
 
 
-@api.post("/access/users", response=AccessUserCreateOut)
-def access_users_create(request: HttpRequest, payload: AccessUserCreateIn):
+@api.post(
+    "/access/users",
+    response=AccessUserCreateOut,
+    tags=["access"],
+    summary="Создать заправщика",
+    description=(
+        "Создаёт пользователя с ролью Заправщик в рамках scope актора."
+    ),
+)
+def access_users_create(
+    request: HttpRequest,
+    payload: AccessUserCreateIn = Body(...),
+):
     _ensure_auth(request)
     try:
         user, temp_password = UserAccessService.create_fueler(
@@ -800,11 +1151,16 @@ def access_users_create(request: HttpRequest, payload: AccessUserCreateIn):
     )
 
 
-@api.patch("/access/users/{user_id}", response=AccessUserOut)
+@api.patch(
+    "/access/users/{user_id}",
+    response=AccessUserOut,
+    tags=["access"],
+    summary="Активировать или деактивировать пользователя",
+)
 def access_users_patch(
     request: HttpRequest,
-    user_id: int,
-    payload: AccessStatusPatchIn,
+    user_id: int = Path(..., description="ID пользователя"),
+    payload: AccessStatusPatchIn = Body(...),
 ):
     _ensure_auth(request)
     try:
@@ -834,11 +1190,17 @@ def access_users_patch(
     return _access_user_to_schema(target)
 
 
-@api.patch("/access/users/{user_id}/role", response=AccessUserOut)
+@api.patch(
+    "/access/users/{user_id}/role",
+    response=AccessUserOut,
+    tags=["access"],
+    summary="Назначить роль",
+    description="Заправщик, Менеджер или Администратор.",
+)
 def access_users_role_patch(
     request: HttpRequest,
-    user_id: int,
-    payload: AccessRolePatchIn,
+    user_id: int = Path(..., description="ID пользователя"),
+    payload: AccessRolePatchIn = Body(...),
 ):
     _ensure_auth(request)
     try:
@@ -873,8 +1235,17 @@ def access_users_role_patch(
     return _access_user_to_schema(target)
 
 
-@api.post("/access/users/{user_id}/reset-password", response=AccessPasswordOut)
-def access_users_reset_password(request: HttpRequest, user_id: int):
+@api.post(
+    "/access/users/{user_id}/reset-password",
+    response=AccessPasswordOut,
+    tags=["access"],
+    summary="Сбросить пароль",
+    description="Генерируется временный пароль для выдачи пользователю.",
+)
+def access_users_reset_password(
+    request: HttpRequest,
+    user_id: int = Path(..., description="ID пользователя"),
+):
     _ensure_auth(request)
     try:
         target, temp_password = UserAccessService.reset_password(
@@ -898,11 +1269,17 @@ def access_users_reset_password(request: HttpRequest, user_id: int):
     )
 
 
-@api.patch("/access/users/{user_id}/password", response=AccessPasswordOut)
+@api.patch(
+    "/access/users/{user_id}/password",
+    response=AccessPasswordOut,
+    tags=["access"],
+    summary="Установить пароль",
+    description="Вручную или с генерацией временного.",
+)
 def access_users_password_patch(
     request: HttpRequest,
-    user_id: int,
-    payload: AccessPasswordPatchIn,
+    user_id: int = Path(..., description="ID пользователя"),
+    payload: AccessPasswordPatchIn = Body(...),
 ):
     _ensure_auth(request)
     if not payload.generate_temporary and not (payload.password or "").strip():
@@ -936,11 +1313,16 @@ def access_users_password_patch(
     )
 
 
-@api.patch("/access/users/{user_id}/scope", response=AccessUserOut)
+@api.patch(
+    "/access/users/{user_id}/scope",
+    response=AccessUserOut,
+    tags=["access"],
+    summary="Изменить региональный scope",
+)
 def access_users_scope_patch(
     request: HttpRequest,
-    user_id: int,
-    payload: AccessScopePatchIn,
+    user_id: int = Path(..., description="ID пользователя"),
+    payload: AccessScopePatchIn = Body(...),
 ):
     _ensure_auth(request)
     target_before = (
@@ -974,11 +1356,17 @@ def access_users_scope_patch(
     return _access_user_to_schema(target)
 
 
-@api.patch("/access/users/{user_id}/profile", response=AccessUserOut)
+@api.patch(
+    "/access/users/{user_id}/profile",
+    response=AccessUserOut,
+    tags=["access"],
+    summary="Обновить профиль сотрудника",
+    description="Частичное обновление полей; передайте только изменяемые.",
+)
 def access_users_profile_patch(
     request: HttpRequest,
-    user_id: int,
-    payload: AccessUserProfilePatchIn,
+    user_id: int = Path(..., description="ID пользователя"),
+    payload: AccessUserProfilePatchIn = Body(...),
 ):
     _ensure_auth(request)
     target_before = (
@@ -1021,14 +1409,21 @@ def access_users_profile_patch(
     return _access_user_to_schema(target)
 
 
-@api.get("/access/regions", response=list[RegionOut])
+@api.get(
+    "/access/regions",
+    response=list[RegionOut],
+    tags=["access"],
+    summary="Справочник регионов",
+    description="Для форм: админ — все регионы; менеджер — свой регион.",
+)
 def access_regions(request: HttpRequest):
     _ensure_auth(request)
     UserAccessService._ensure_manager_or_admin(request.user)
     regions_qs = Region.objects.filter(active=True).order_by("name")
-    if bool(getattr(request.user, "is_superuser", False)) or request.user.groups.filter(
-        name="Администратор"
-    ).exists():
+    if (
+        bool(getattr(request.user, "is_superuser", False))
+        or request.user.groups.filter(name="Администратор").exists()
+    ):
         return [
             RegionOut(id=region.id, name=region.name) for region in regions_qs
         ]
@@ -1040,15 +1435,28 @@ def access_regions(request: HttpRequest):
     return [RegionOut(id=region.id, name=region.name) for region in regions_qs]
 
 
-@api.get("/reports/access-events", response=list[AccessLogOut])
-def reports_access_events(request: HttpRequest, limit: int = 100):
+@api.get(
+    "/reports/access-events",
+    response=list[AccessLogOut],
+    tags=["reports"],
+    summary="Журнал событий доступа",
+    description=(
+        "События с префиксом access_. Не-админы видят только записи, "
+        "где актор — они сами."
+    ),
+)
+def reports_access_events(
+    request: HttpRequest,
+    limit: int = Query(100, ge=1, le=200, description="Максимум строк"),
+):
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
     safe_limit = max(1, min(limit, 200))
     logs = SystemLog.objects.filter(action__startswith="access_")
-    is_admin = bool(getattr(request.user, "is_superuser", False)) or request.user.groups.filter(
-        name="Администратор"
-    ).exists()
+    is_admin = (
+        bool(getattr(request.user, "is_superuser", False))
+        or request.user.groups.filter(name="Администратор").exists()
+    )
     if not is_admin:
         logs = logs.filter(user_id=request.user.id)
     logs = logs.select_related("user").order_by("-created_at")[:safe_limit]
@@ -1202,12 +1610,30 @@ def _apply_analytics_filters(
     return qs
 
 
-@api.get("/analytics/stats", response=AnalyticsDataOut)
+@api.get(
+    "/analytics/stats",
+    response=AnalyticsDataOut,
+    tags=["analytics"],
+    summary="Данные дашборда аналитики",
+    description=(
+        "KPI, графики и топы; срезы согласованы с бизнес-правилами "
+        "(см. docs/ARCHITECTURE.md)."
+    ),
+)
 def analytics_stats(
     request: HttpRequest,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-    region_id: Optional[int] = None,
+    start_date: Optional[date] = Query(
+        None,
+        description="Начало периода; по умолчанию ~30 дней до end_date",
+    ),
+    end_date: Optional[date] = Query(
+        None,
+        description="Конец периода; по умолчанию сегодня",
+    ),
+    region_id: Optional[int] = Query(
+        None,
+        description="Исторический регион; учитывается scope менеджера",
+    ),
 ) -> AnalyticsDataOut:
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
@@ -1266,7 +1692,9 @@ def analytics_stats(
         by_day_region.append(
             AnalyticsByDayRegionPointOut(
                 date=day_dt.date().isoformat(),
-                region_name=str(row.get("historical_region__name") or "Без региона"),
+                region_name=str(
+                    row.get("historical_region__name") or "Без региона"
+                ),
                 liters=float(row.get("total_liters") or 0),
             )
         )
@@ -1292,15 +1720,15 @@ def analytics_stats(
             )
         )
 
-    recent_qs = (
-        qs.order_by("-filled_at").select_related(
-            "car", "employee", "historical_region"
-        )[:RECENT_RECORDS_LIMIT]
-    )
+    recent_qs = qs.order_by("-filled_at").select_related(
+        "car", "employee", "historical_region"
+    )[:RECENT_RECORDS_LIMIT]
     recent_records: list[AnalyticsRecentRecordOut] = []
     for record in recent_qs:
         employee_name = (
-            record.employee.get_full_name() if record.employee else "Неизвестно"
+            record.employee.get_full_name()
+            if record.employee
+            else "Неизвестно"
         )
         car_label = record.car.state_number if record.car else ""
         region_name = (
@@ -1397,12 +1825,38 @@ def analytics_stats(
     )
 
 
-@api.get("/analytics/export")
+@api.get(
+    "/analytics/export",
+    tags=["analytics"],
+    summary="Выгрузка аналитики в Excel",
+    description=(
+        "Файл .xlsx с колонками дата, сотрудник, авто, регион, тип топлива, "
+        "объём. Параметры периода и региона — как у GET /analytics/stats."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "description": "Двоичный файл Excel (Open XML)",
+                "content": {
+                    (
+                        "application/vnd.openxmlformats-officedocument."
+                        "spreadsheetml.sheet"
+                    ): {
+                        "schema": {"type": "string", "format": "binary"},
+                    },
+                },
+            },
+        },
+    },
+)
 def analytics_export(
     request: HttpRequest,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-    region_id: Optional[int] = None,
+    start_date: Optional[date] = Query(
+        None,
+        description="Начало периода",
+    ),
+    end_date: Optional[date] = Query(None, description="Конец периода"),
+    region_id: Optional[int] = Query(None, description="Исторический регион"),
 ) -> HttpResponse:
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
@@ -1446,7 +1900,9 @@ def analytics_export(
 
     for record in qs.iterator(chunk_size=1000):
         employee_name = (
-            record.employee.get_full_name() if record.employee else "Неизвестно"
+            record.employee.get_full_name()
+            if record.employee
+            else "Неизвестно"
         )
         car_label = record.car.state_number if record.car else ""
         region_name = (
@@ -1467,7 +1923,8 @@ def analytics_export(
 
     filename_region = "all" if region_id is None else str(region_id)
     filename = (
-        f"fuel_analytics_{start_dt.isoformat()}_{end_dt.isoformat()}_{filename_region}.xlsx"
+        f"fuel_analytics_{start_dt.isoformat()}_"
+        f"{end_dt.isoformat()}_{filename_region}.xlsx"
     )
 
     output = BytesIO()
