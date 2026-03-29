@@ -22,6 +22,7 @@ COPY . /app
 RUN mkdir -p /app/static /app/media
 
 COPY scripts/entrypoint.dev.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Windows checkouts часто дают CRLF; без этого ядро ищет /bin/bash\r
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
