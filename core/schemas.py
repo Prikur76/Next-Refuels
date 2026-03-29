@@ -24,7 +24,8 @@ class AnalyticsRefuelSourceSliceOut(Schema):
 
 class AnalyticsRefuelChannelSliceOut(Schema):
     """
-    Три канала: CARD, TGBOT, TRUCK — только где car не топливозаправщик.
+    Три канала: CARD и TGBOT — только если получатель не топливозаправщик;
+    TRUCK — все записи способом «Топливозаправщик», в т.ч. на ТЗ.
     """
 
     channel: str
@@ -34,14 +35,18 @@ class AnalyticsRefuelChannelSliceOut(Schema):
 
 
 class AnalyticsRecentRecordOut(Schema):
+    id: int
     filled_at: str
     employee_name: str
     car: str
+    car_id: int
     car_is_fuel_tanker: bool = False
     region_name: Optional[str] = None
     fuel_type: str
     fuel_type_label: str
+    source: str
     liters: float
+    notes: str = ""
 
 
 class AnalyticsEmployeeBreakdownOut(Schema):
@@ -61,6 +66,8 @@ class AnalyticsCarBreakdownOut(Schema):
 
 
 class AnalyticsDataOut(Schema):
+    """by_day и by_day_region — срез как у refuel_channels (дашборд)."""
+
     by_day: list[AnalyticsByDayPointOut]
     by_day_region: list[AnalyticsByDayRegionPointOut]
     refuel_sources: list[AnalyticsRefuelSourceSliceOut]

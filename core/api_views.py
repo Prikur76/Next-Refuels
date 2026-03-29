@@ -31,10 +31,14 @@ def export_reports_xlsx(request: HttpRequest) -> HttpResponse:
 
 
 def _build_filtered_queryset(request: HttpRequest):
-    qs = FuelRecord.objects.with_related_data().order_by("-filled_at")
+    qs = (
+        FuelRecord.objects.active_for_reports()
+        .with_related_data()
+        .order_by("-filled_at")
+    )
     from_date = request.GET.get("from_date")
     to_date = request.GET.get("to_date")
-    region_id = request.GET.get("region_id")
+    region_id_raw = request.GET.get("region_id")
     region = request.GET.get("region")
     employee = request.GET.get("employee")
     car_id = request.GET.get("car_id")
@@ -45,8 +49,13 @@ def _build_filtered_queryset(request: HttpRequest):
         qs = qs.filter(filled_at__date__gte=date.fromisoformat(from_date))
     if to_date:
         qs = qs.filter(filled_at__date__lte=date.fromisoformat(to_date))
-    if region_id:
-        qs = qs.filter(historical_region_id=int(region_id))
+    parsed_rid = int(region_id_raw) if region_id_raw else None
+    rid = FuelService.normalized_reports_region_id(
+        request.user,
+        parsed_rid,
+    )
+    if rid is not None:
+        qs = qs.filter(historical_region_id=rid)
     if region:
         region_value = region.strip()
         if region_value:

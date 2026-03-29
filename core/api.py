@@ -9,9 +9,9 @@ from typing import Optional
 from django.conf import settings
 from django.contrib.auth import update_session_auth_hash
 from django.core.exceptions import PermissionDenied
-from django.db.models import Q, Count, Sum, Value
+from django.db.models import Count, Q, Sum, Value
 from django.db.models.functions import Coalesce, Concat, TruncDay
-from django.http import HttpRequest, JsonResponse, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from ninja import NinjaAPI, Schema
@@ -25,16 +25,20 @@ from core.schemas import (
     AnalyticsCarBreakdownOut,
     AnalyticsDataOut,
     AnalyticsEmployeeBreakdownOut,
+    AnalyticsRecentRecordOut,
     AnalyticsRefuelChannelSliceOut,
     AnalyticsRefuelSourceSliceOut,
-    AnalyticsRecentRecordOut,
 )
 from core.services.access_service import (
     AccessCreatePayload,
     AccessUpdatePayload,
     UserAccessService,
 )
-from core.services.fuel_service import FuelCreatePayload, FuelService
+from core.services.fuel_service import (
+    FuelCreatePayload,
+    FuelPatchPayload,
+    FuelService,
+)
 from core.services.telegram_link_service import TelegramLinkService
 from core.utils.logging import log_access_event, log_action
 
@@ -55,6 +59,8 @@ class UserMeOut(Schema):
     mfa_policy_enabled: bool
     must_change_password: bool
     telegram_linked: bool
+    has_my_editable_fuel_records: bool = False
+    region_id: Optional[int] = None
 
 
 class TelegramLinkCodeOut(Schema):
@@ -92,6 +98,18 @@ class FuelRecordOut(Schema):
     filled_at: str
     employee_name: str
     region_name: Optional[str] = None
+    reporting_status: str = "ACTIVE"
+    notes: str = ""
+
+
+class FuelRecordPatchIn(Schema):
+    car_id: Optional[int] = None
+    liters: Optional[Decimal] = None
+    fuel_type: Optional[str] = None
+    source: Optional[str] = None
+    notes: Optional[str] = None
+    filled_at: Optional[datetime] = None
+    reporting_status: Optional[str] = None
 
 
 class SummaryOut(Schema):
@@ -203,6 +221,14 @@ def _ensure_auth(request: HttpRequest):
         raise HttpError(401, "Требуется авторизация")
 
 
+def _client_timezone_from_request(request: HttpRequest):
+    raw = request.META.get("HTTP_X_CLIENT_TIMEZONE")
+    try:
+        return FuelService.parse_client_timezone(raw)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
 def _record_to_schema(record: FuelRecord) -> FuelRecordOut:
     car_state_number = record.car.state_number if record.car else ""
     car_is_fuel_tanker = bool(record.car and record.car.is_fuel_tanker)
@@ -225,6 +251,8 @@ def _record_to_schema(record: FuelRecord) -> FuelRecordOut:
         filled_at=record.filled_at.isoformat(),
         employee_name=employee_name,
         region_name=region_name,
+        reporting_status=str(record.reporting_status),
+        notes=record.notes or "",
     )
 
 
@@ -327,9 +355,17 @@ def auth_csrf(request: HttpRequest):
 
 
 @api.get("/auth/me", response=UserMeOut)
-def auth_me(request: HttpRequest):
+def auth_me(request: HttpRequest, client_tz: Optional[str] = None):
     _ensure_auth(request)
     groups = _user_groups_with_superuser(request.user)
+    try:
+        tz_val = FuelService.parse_client_timezone(client_tz)
+    except ValueError:
+        tz_val = timezone.get_current_timezone()
+    has_mine = FuelService.user_has_my_editable_fuel_records(
+        request.user,
+        tz_val,
+    )
     return UserMeOut(
         id=request.user.id,
         username=request.user.username,
@@ -339,6 +375,8 @@ def auth_me(request: HttpRequest):
         mfa_policy_enabled=settings.MFA_POLICY_ENABLED,
         must_change_password=request.user.must_change_password,
         telegram_linked=bool(request.user.telegram_id),
+        has_my_editable_fuel_records=has_mine,
+        region_id=request.user.region_id,
     )
 
 
@@ -478,6 +516,62 @@ def recent_fuel_records(request: HttpRequest, limit: int = 30):
     return [_record_to_schema(record) for record in records]
 
 
+@api.get("/fuel-records/mine", response=list[FuelRecordOut])
+def my_fuel_records(request: HttpRequest):
+    _ensure_auth(request)
+    if not FuelService._is_fueler(request.user):
+        raise HttpError(403, "Доступно только заправщикам")
+    client_tz = _client_timezone_from_request(request)
+    qs = FuelService.query_my_active_fuel_records(request.user, client_tz)
+    return [_record_to_schema(rec) for rec in qs]
+
+
+@api.patch("/fuel-records/{record_id}", response=FuelRecordOut)
+def patch_fuel_record(
+    request: HttpRequest, record_id: int, payload: FuelRecordPatchIn
+):
+    _ensure_auth(request)
+    FuelService.ensure_input_access(request.user)
+    dumped = payload.model_dump(exclude_unset=True)
+    if not dumped:
+        raise HttpError(400, "Нет полей для обновления")
+    client_tz = _client_timezone_from_request(request)
+    try:
+        record = FuelRecord.objects.select_related(
+            "car", "employee", "car__region", "historical_region"
+        ).get(pk=record_id)
+    except FuelRecord.DoesNotExist:
+        raise HttpError(404, "Запись не найдена") from None
+    patch = FuelPatchPayload(
+        car_id=dumped["car_id"] if "car_id" in dumped else None,
+        liters=dumped["liters"] if "liters" in dumped else None,
+        fuel_type=dumped["fuel_type"] if "fuel_type" in dumped else None,
+        source=dumped["source"] if "source" in dumped else None,
+        notes=dumped["notes"] if "notes" in dumped else None,
+        filled_at=dumped["filled_at"] if "filled_at" in dumped else None,
+        reporting_status=(
+            dumped["reporting_status"]
+            if "reporting_status" in dumped
+            else None
+        ),
+    )
+    try:
+        FuelService.apply_fuel_record_patch(
+            request.user,
+            record,
+            patch,
+            client_tz=client_tz,
+        )
+        record.refresh_from_db()
+    except PermissionDenied as exc:
+        raise HttpError(403, str(exc)) from exc
+    except ValueError as exc:
+        msg = str(exc)
+        status = 422 if "Некорректный формат литров" in msg else 400
+        raise HttpError(status, msg) from exc
+    return _record_to_schema(record)
+
+
 @api.get("/reports/summary", response=SummaryOut)
 def reports_summary(
     request: HttpRequest,
@@ -492,12 +586,16 @@ def reports_summary(
 ):
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
-    qs = FuelRecord.objects.with_related_data()
+    rid = FuelService.normalized_reports_region_id(
+        request.user,
+        region_id,
+    )
+    qs = FuelRecord.objects.active_for_reports().with_related_data()
     qs = _apply_reports_filters(
         qs,
         from_date=from_date,
         to_date=to_date,
-        region_id=region_id,
+        region_id=rid,
         region=region,
         employee=employee,
         car_id=car_id,
@@ -522,7 +620,7 @@ def reports_filters(
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
 
-    qs = FuelRecord.objects.with_related_data()
+    qs = FuelRecord.objects.active_for_reports().with_related_data()
     qs = _apply_filled_at_date_range(qs, from_date, to_date)
     if source:
         qs = qs.filter(source=source)
@@ -586,12 +684,20 @@ def reports_records(
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
 
-    qs = FuelRecord.objects.with_related_data().order_by("-filled_at")
+    rid = FuelService.normalized_reports_region_id(
+        request.user,
+        region_id,
+    )
+    qs = (
+        FuelRecord.objects.active_for_reports()
+        .with_related_data()
+        .order_by("-filled_at")
+    )
     qs = _apply_reports_filters(
         qs,
         from_date=from_date,
         to_date=to_date,
-        region_id=region_id,
+        region_id=rid,
         region=region,
         employee=employee,
         car_id=car_id,
@@ -1030,6 +1136,24 @@ def _sum_liters(qs) -> float:
     return float(v or 0)
 
 
+def _analytics_dashboard_channel_records_qs(qs):
+    """
+    Записи для графика «Карта / бот / ТЗ» и согласованного топа сотрудников.
+
+    CARD и TGBOT — только если получатель не топливозаправщик. TRUCK — все
+    записи способом «Топливозаправщик», в том числе выдача на ТЗ.
+    """
+    card_tgbot = Q(
+        source__in=[
+            FuelRecord.SourceFuel.CARD,
+            FuelRecord.SourceFuel.TGBOT,
+        ],
+        car__is_fuel_tanker=False,
+    )
+    truck_all = Q(source=FuelRecord.SourceFuel.TRUCK)
+    return qs.filter(card_tgbot | truck_all)
+
+
 def _refuel_sources_card_tgbot_only(
     qs,
 ) -> list[AnalyticsRefuelSourceSliceOut]:
@@ -1080,8 +1204,13 @@ def analytics_stats(
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
 
+    rid = FuelService.normalized_reports_region_id(
+        request.user,
+        region_id,
+    )
     qs = (
-        FuelRecord.objects.with_historical_data()
+        FuelRecord.objects.active_for_reports()
+        .with_historical_data()
         .select_related("car", "employee", "historical_region")
         .all()
     )
@@ -1089,11 +1218,13 @@ def analytics_stats(
         qs,
         start_date=start_date,
         end_date=end_date,
-        region_id=region_id,
+        region_id=rid,
     )
 
+    qs_channels_scope = _analytics_dashboard_channel_records_qs(qs)
+
     by_day_qs = (
-        qs.annotate(day=TruncDay("filled_at"))
+        qs_channels_scope.annotate(day=TruncDay("filled_at"))
         .values("day")
         .annotate(
             total_liters=Sum("liters"),
@@ -1114,7 +1245,7 @@ def analytics_stats(
         )
 
     by_day_region_qs = (
-        qs.annotate(day=TruncDay("filled_at"))
+        qs_channels_scope.annotate(day=TruncDay("filled_at"))
         .values("day", "historical_region__name")
         .annotate(total_liters=Sum("liters"))
         .order_by("day", "historical_region__name")
@@ -1134,16 +1265,13 @@ def analytics_stats(
 
     refuel_sources = _refuel_sources_card_tgbot_only(qs)
 
-    # Карта / бот / ТЗ: только заправки на автомобили, не являющиеся
-    # топливозаправщиками (самозаправ заправщиков сюда не входит).
-    qs_channel_cars = qs.filter(car__is_fuel_tanker=False)
     refuel_channels: list[AnalyticsRefuelChannelSliceOut] = []
     for code in (
         FuelRecord.SourceFuel.CARD,
         FuelRecord.SourceFuel.TGBOT,
         FuelRecord.SourceFuel.TRUCK,
     ):
-        agg = qs_channel_cars.filter(source=code).aggregate(
+        agg = qs_channels_scope.filter(source=code).aggregate(
             total_liters=Sum("liters"),
             records_count=Count("id"),
         )
@@ -1174,21 +1302,25 @@ def analytics_stats(
         fuel_type_label_value = str(record.get_fuel_type_display())
         recent_records.append(
             AnalyticsRecentRecordOut(
+                id=record.id,
                 filled_at=record.filled_at.isoformat(),
                 employee_name=employee_name,
                 car=car_label,
+                car_id=record.car_id,
                 car_is_fuel_tanker=bool(
                     record.car and record.car.is_fuel_tanker
                 ),
                 region_name=region_name,
                 fuel_type=fuel_type_code,
                 fuel_type_label=fuel_type_label_value,
+                source=str(record.source),
                 liters=float(record.liters),
+                notes=record.notes or "",
             )
         )
 
     employees_qs = (
-        qs.values(
+        qs_channels_scope.values(
             "employee_id",
             "employee__first_name",
             "employee__last_name",
@@ -1269,8 +1401,13 @@ def analytics_export(
 
     start_dt, end_dt = _normalize_analytics_date_range(start_date, end_date)
 
+    rid = FuelService.normalized_reports_region_id(
+        request.user,
+        region_id,
+    )
     qs = (
-        FuelRecord.objects.with_historical_data()
+        FuelRecord.objects.active_for_reports()
+        .with_historical_data()
         .select_related("car", "employee", "historical_region")
         .all()
     )
@@ -1278,7 +1415,7 @@ def analytics_export(
         qs,
         start_date=start_dt,
         end_date=end_dt,
-        region_id=region_id,
+        region_id=rid,
     ).order_by("filled_at")
 
     from io import BytesIO
