@@ -214,3 +214,77 @@ class FuelRecordPatchRbacTests(TestCase):
         data = resp.json()
         self.assertEqual(data["total_records"], 1)
         self.assertAlmostEqual(data["total_liters"], 11.0)
+
+
+class FuelRecordsMineAccessTests(TestCase):
+    """GET /api/v1/fuel-records/mine для ролей с правом ввода, не только Заправщик."""
+
+    def setUp(self):
+        self.region = create_region(name="Reg Mine", short_name="M")
+        self.car = create_car(
+            code="m1",
+            state_number="M111MM77",
+            model="Test",
+            region=self.region,
+        )
+        self.manager_only = create_user(
+            username="mgr_mine",
+            password="pw",
+            groups=("Менеджер",),
+            region=self.region,
+        )
+        self.admin_only = create_user(
+            username="adm_mine",
+            password="pw",
+            groups=("Администратор",),
+        )
+
+    def test_manager_without_fueler_group_gets_own_recent_records(self):
+        create_fuel_record(
+            car=self.car,
+            employee=self.manager_only,
+            liters=Decimal("20"),
+            filled_at=timezone.now(),
+        )
+        c = Client()
+        c.login(username="mgr_mine", password="pw")
+        resp = c.get(
+            "/api/v1/fuel-records/mine",
+            HTTP_X_CLIENT_TIMEZONE="UTC",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertEqual(len(data), 1)
+        self.assertAlmostEqual(float(data[0]["liters"]), 20.0, places=2)
+
+    def test_admin_without_fueler_group_gets_own_recent_records(self):
+        create_fuel_record(
+            car=self.car,
+            employee=self.admin_only,
+            liters=Decimal("15"),
+            filled_at=timezone.now(),
+        )
+        c = Client()
+        c.login(username="adm_mine", password="pw")
+        resp = c.get(
+            "/api/v1/fuel-records/mine",
+            HTTP_X_CLIENT_TIMEZONE="UTC",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(len(resp.json()), 1)
+
+    def test_auth_me_has_mine_flag_for_manager_with_recent_own_record(self):
+        create_fuel_record(
+            car=self.car,
+            employee=self.manager_only,
+            liters=Decimal("5"),
+            filled_at=timezone.now(),
+        )
+        c = Client()
+        c.login(username="mgr_mine", password="pw")
+        resp = c.get(
+            "/api/v1/auth/me",
+            {"client_tz": "UTC"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["has_my_editable_fuel_records"], resp.json())
