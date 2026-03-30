@@ -82,9 +82,10 @@ jobs:
             git pull --ff-only origin "${DEPLOY_BRANCH}"
 
             ${COMPOSE} pull || true
-            ${COMPOSE} up -d --build --remove-orphans
+            ${COMPOSE} build
+            ${COMPOSE} run --rm web python manage.py migrate --noinput
+            ${COMPOSE} up -d --remove-orphans
 
-            ${COMPOSE} exec -T web python manage.py migrate --noinput
             ${COMPOSE} exec -T web python manage.py collectstatic --noinput
             ${COMPOSE} exec -T web python manage.py check
 

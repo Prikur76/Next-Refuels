@@ -71,6 +71,13 @@ echo "🛠 Building Docker images..." | tee -a "$LOGFILE"
 $COMPOSE build
 
 ############################################
+# APPLY MIGRATIONS (BEFORE WEB START)
+############################################
+echo ""
+echo "🗄 Applying migrations (pre-start)..." | tee -a "$LOGFILE"
+$COMPOSE run --rm web python manage.py migrate --noinput
+
+############################################
 # START SERVICES
 ############################################
 echo ""
@@ -148,13 +155,6 @@ if [[ "$DB_OK" != "1" ]]; then
 fi
 
 echo "✔ Database connection OK!" | tee -a "$LOGFILE"
-
-############################################
-# APPLY MIGRATIONS
-############################################
-echo ""
-echo "🗄 Applying migrations..." | tee -a "$LOGFILE"
-$COMPOSE exec -T web python manage.py migrate --noinput
 
 ############################################
 # CREATE SUPERUSER

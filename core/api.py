@@ -11,7 +11,7 @@ from django.contrib.auth import update_session_auth_hash
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q, Sum, Value
 from django.db.models.functions import Coalesce, Concat, TruncDay
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from ninja import Body, Field, NinjaAPI, Path, Query, Schema
@@ -547,7 +547,7 @@ def _access_user_to_schema(user) -> AccessUserOut:
 )
 @ensure_csrf_cookie
 def auth_csrf(request: HttpRequest):
-    return {"ok": True}
+    return JsonResponse({"ok": True})
 
 
 @api.get(
