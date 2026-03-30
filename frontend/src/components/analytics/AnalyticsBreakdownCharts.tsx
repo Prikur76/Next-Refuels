@@ -10,6 +10,9 @@ import { useMediaQueryMinWidth } from "@/hooks/useMediaQueryMinWidth";
 
 const BAR_ROW_PX = 30;
 const CHART_TOP_BOTTOM_PAD_PX = 56;
+const AXIS_TICK_FILL = "color-mix(in srgb, var(--text) 84%, var(--muted) 16%)";
+const AXIS_LINE_STROKE = "color-mix(in srgb, var(--border) 82%, transparent)";
+const GRID_STROKE = "color-mix(in srgb, var(--border) 72%, transparent)";
 
 function truncateAxisLabel(value: string, maxLen: number): string {
   if (value.length <= maxLen) {
@@ -65,17 +68,23 @@ function HorizontalBreakdownChart(props: {
             bottom: 8,
           }}
         >
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+          <CartesianGrid
+            stroke={GRID_STROKE}
+            strokeDasharray="3 3"
+            horizontal={false}
+          />
           <XAxis
             type="number"
-            tick={{ fontSize: wideLayout ? 11 : 10 }}
+            stroke={AXIS_LINE_STROKE}
+            tick={{ fontSize: wideLayout ? 11 : 10, fill: AXIS_TICK_FILL }}
             tickFormatter={(v: number) => formatDecimalRu(v)}
           />
           <YAxis
             type="category"
             dataKey="axisLabel"
             width={yAxisWidth}
-            tick={{ fontSize: wideLayout ? 11 : 10 }}
+            stroke={AXIS_LINE_STROKE}
+            tick={{ fontSize: wideLayout ? 11 : 10, fill: AXIS_TICK_FILL }}
             interval={0}
             tickFormatter={(v: string) => truncateAxisLabel(v, labelMaxLen)}
           />
