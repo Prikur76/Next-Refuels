@@ -33,6 +33,7 @@ class FuelRecordAdmin(admin.ModelAdmin):
         "fuel_type_display",
         "liters",
         "source_display",
+        "reporting_status_display",
         "historical_department_display",
         "historical_region_display",
         "notes",
@@ -41,6 +42,7 @@ class FuelRecordAdmin(admin.ModelAdmin):
     list_filter = (
         "fuel_type",
         "source",
+        "reporting_status",
         "filled_at",
         "created_at",
         FuelRecordRegionFilter,
@@ -74,6 +76,7 @@ class FuelRecordAdmin(admin.ModelAdmin):
                     "employee",
                     ("liters", "fuel_type"),
                     "source",
+                    "reporting_status",
                     "filled_at",
                     "notes",
                     "display_info",
@@ -134,6 +137,18 @@ class FuelRecordAdmin(admin.ModelAdmin):
         icons = {"CARD": "💳", "TGBOT": "🤖", "TRUCK": "🚛"}
         return format_html(
             "{} {}", icons.get(obj.source, "❓"), obj.get_source_display()
+        )
+
+    @admin.display(description="Статус учёта", ordering="reporting_status")
+    def reporting_status_display(self, obj):
+        if obj.reporting_status == FuelRecord.ReportingStatus.EXCLUDED_DELETION:
+            return format_html(
+                '<span style="color: #b91c1c; font-weight: 600;">{}</span>',
+                obj.get_reporting_status_display(),
+            )
+        return format_html(
+            '<span style="color: #047857; font-weight: 600;">{}</span>',
+            obj.get_reporting_status_display(),
         )
 
     @admin.display(description="Дата заправки", ordering="filled_at")
