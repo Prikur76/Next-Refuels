@@ -1877,7 +1877,7 @@ def analytics_stats(
     ),
     openapi_extra={
         "responses": {
-            "200": {
+            200: {
                 "description": "Двоичный файл Excel (Open XML)",
                 "content": {
                     (
