@@ -116,7 +116,10 @@ class UserMeOut(Schema):
     )
     has_my_editable_fuel_records: bool = Field(
         False,
-        description="Есть ли у заправщика редактируемые записи за окно 24ч",
+        description=(
+            "Есть ли у пользователя с правом ввода заправок свои записи в "
+            "окне 24ч (локальное время клиента)"
+        ),
     )
     region_id: Optional[int] = Field(None, description="Регион пользователя")
     app_timezone: str = Field(
@@ -187,11 +190,17 @@ class FuelRecordOut(Schema):
         None,
         description="Исторический регион записи",
     )
+    historical_department: str = Field(
+        "",
+        description="Подразделение (на момент заправки)",
+    )
     reporting_status: str = Field(
         "ACTIVE",
         description="ACTIVE или EXCLUDED_DELETION",
     )
     notes: str = ""
+    created_at: str = Field(..., description="Создано (ISO 8601)")
+    updated_at: str = Field(..., description="Обновлено (ISO 8601)")
 
 
 class FuelRecordPatchIn(Schema):
@@ -413,6 +422,9 @@ def _record_to_schema(record: FuelRecord) -> FuelRecordOut:
         region_name = record.historical_region.name
     elif record.car and record.car.region:
         region_name = record.car.region.name
+    department = (record.historical_department or "").strip()
+    if not department and record.car:
+        department = (record.car.department or "").strip()
     return FuelRecordOut(
         id=record.id,
         car_id=record.car_id,
@@ -424,8 +436,11 @@ def _record_to_schema(record: FuelRecord) -> FuelRecordOut:
         filled_at=record.filled_at.isoformat(),
         employee_name=employee_name,
         region_name=region_name,
+        historical_department=department,
         reporting_status=str(record.reporting_status),
         notes=record.notes or "",
+        created_at=record.created_at.isoformat(),
+        updated_at=record.updated_at.isoformat(),
     )
 
 
@@ -766,14 +781,17 @@ def recent_fuel_records(
     tags=["fuel"],
     summary="Мои заправки (редактируемое окно)",
     description=(
-        "Только роль Заправщик. Учитывается заголовок X-Client-Timezone "
-        "(см. описание API)."
+        "Свои записи в скользящем 24-часовом окне (локальное время клиента). "
+        "Доступно ролям с правом ввода заправок. Нужен заголовок "
+        "X-Client-Timezone (см. описание API)."
     ),
 )
 def my_fuel_records(request: HttpRequest):
     _ensure_auth(request)
-    if not FuelService._is_fueler(request.user):
-        raise HttpError(403, "Доступно только заправщикам")
+    try:
+        FuelService.ensure_input_access(request.user)
+    except PermissionDenied as exc:
+        raise HttpError(403, str(exc)) from exc
     client_tz = _client_timezone_from_request(request)
     qs = FuelService.query_my_active_fuel_records(request.user, client_tz)
     return [_record_to_schema(rec) for rec in qs]
@@ -877,6 +895,13 @@ def reports_summary(
         None,
         description="Способ: CARD, TGBOT или TRUCK",
     ),
+    include_excluded: bool = Query(
+        False,
+        description=(
+            "Включать записи со статусом EXCLUDED_DELETION (на удаление). "
+            "По умолчанию false."
+        ),
+    ),
 ):
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
@@ -884,7 +909,9 @@ def reports_summary(
         request.user,
         region_id,
     )
-    qs = FuelRecord.objects.active_for_reports().with_related_data()
+    qs = FuelRecord.objects.with_related_data()
+    if not include_excluded:
+        qs = qs.active_for_reports()
     qs = _apply_reports_filters(
         qs,
         from_date=from_date,
@@ -925,11 +952,20 @@ def reports_filters(
         None,
         description="Ограничить выборку способом заправки",
     ),
+    include_excluded: bool = Query(
+        False,
+        description=(
+            "Включать записи со статусом EXCLUDED_DELETION (на удаление). "
+            "По умолчанию false."
+        ),
+    ),
 ):
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
 
-    qs = FuelRecord.objects.active_for_reports()
+    qs = FuelRecord.objects.all()
+    if not include_excluded:
+        qs = qs.active_for_reports()
     qs = _apply_filled_at_date_range(qs, from_date, to_date)
     if source:
         qs = qs.filter(source=source)
@@ -1016,6 +1052,13 @@ def reports_records(
     ),
     offset: int = Query(0, ge=0, description="Смещение (без cursor)"),
     limit: int = Query(50, ge=1, le=200, description="Размер страницы"),
+    include_excluded: bool = Query(
+        False,
+        description=(
+            "Включать записи со статусом EXCLUDED_DELETION (на удаление). "
+            "По умолчанию false."
+        ),
+    ),
 ):
     _ensure_auth(request)
     FuelService.ensure_reports_access(request.user)
@@ -1024,11 +1067,10 @@ def reports_records(
         request.user,
         region_id,
     )
-    qs = (
-        FuelRecord.objects.active_for_reports()
-        .with_related_data()
-        .order_by("-filled_at", "-id")
-    )
+    qs = FuelRecord.objects.with_related_data()
+    if not include_excluded:
+        qs = qs.active_for_reports()
+    qs = qs.order_by("-filled_at", "-id")
     qs = _apply_reports_filters(
         qs,
         from_date=from_date,
