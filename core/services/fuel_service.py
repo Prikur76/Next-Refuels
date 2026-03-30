@@ -158,7 +158,7 @@ class FuelService:
     def user_has_my_editable_fuel_records(user: Any, client_tz: Any) -> bool:
         if not user or not getattr(user, "is_authenticated", False):
             return False
-        if not user.groups.filter(name=ROLE_FUELER).exists():
+        if not FuelService.user_has_any_group(user, ALLOWED_INPUT_GROUPS):
             return False
         return FuelService.query_my_active_fuel_records(
             user,
