@@ -64,7 +64,7 @@ const ANALYTICS_DATE_PRESETS: readonly {
   { id: "yesterday", label: "Вчера" },
   { id: "last7", label: "7 дней" },
   { id: "last30", label: "30 дней" },
-  { id: "monthToDate", label: "Месяц" },
+  { id: "monthToDate", label: "Текущий месяц" },
 ] as const;
 
 function isAnalyticsPresetId(value: string): value is AnalyticsDatePresetId {
