@@ -47,11 +47,14 @@ services:
       SESSION_COOKIE_SECURE: "True"
       CSRF_COOKIE_SECURE: "True"
     command: >
+      /bin/sh -c "
+      python manage.py collectstatic --noinput &&
       gunicorn next_refuels.wsgi:application
       --bind 0.0.0.0:8000
       --workers 4
       --log-level info
       --access-logfile /dev/null
+      "
     volumes:
       - static_volume:/app/static
       - media_volume:/app/media
