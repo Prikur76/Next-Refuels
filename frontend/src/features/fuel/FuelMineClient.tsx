@@ -76,6 +76,20 @@ function recordToInitial(row: FuelRecordOut): FuelRecordEditInitial {
   };
 }
 
+function reportingStatusLabel(status: string | undefined): string {
+  if (status === "EXCLUDED_DELETION") {
+    return "На удаление";
+  }
+  return "Учитывается";
+}
+
+function reportingStatusBadgeClass(status: string | undefined): string {
+  if (status === "EXCLUDED_DELETION") {
+    return "inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300";
+  }
+  return "inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300";
+}
+
 export function FuelMineClient() {
   const [editing, setEditing] = useState<FuelRecordEditInitial | null>(null);
   const queryClient = useQueryClient();
@@ -89,10 +103,10 @@ export function FuelMineClient() {
     <div className="page-wrap">
       <section className="card p-4">
         <h1 className="section-title">Мои заправки</h1>
-        <div className="muted-box mt-3 text-sm text-[var(--muted)]">
+        <div className="fuel-mine-hint mt-3">
           <p>
-            Изменение записей доступно в течение 24 часов с момента заправки. Для
-            уточнения записей позже - обратитесь к региональному менеджеру.
+            Правки доступны в течение 24 часов с момента заправки (ваш локальный
+            часовой пояс). Позже уточнения - через регионального менеджера.
           </p>
         </div>
 
@@ -122,6 +136,7 @@ export function FuelMineClient() {
                       <th>Л</th>
                       <th>Топливо</th>
                       <th>Источник</th>
+                      <th>Статус</th>
                       <th>Комментарий</th>
                       <th />
                     </tr>
@@ -156,6 +171,16 @@ export function FuelMineClient() {
                           {row.fuel_type === "DIESEL" ? "Дизель" : "Бензин"}
                         </td>
                         <td>{sourceLabel(row.source)}</td>
+                        <td>
+                          <span
+                            className={reportingStatusBadgeClass(
+                              row.reporting_status,
+                            )}
+                            title={row.reporting_status ?? "ACTIVE"}
+                          >
+                            {reportingStatusLabel(row.reporting_status)}
+                          </span>
+                        </td>
                         <td className="max-w-[180px] truncate text-sm">
                           {row.notes || "—"}
                         </td>
@@ -243,6 +268,20 @@ export function FuelMineClient() {
                         </span>
                         <span className="min-w-0 break-words text-right">
                           {row.notes?.trim() ? row.notes : "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="shrink-0 text-[var(--muted)]">
+                          Статус
+                        </span>
+                        <span className="min-w-0 break-words text-right">
+                          <span
+                            className={reportingStatusBadgeClass(
+                              row.reporting_status,
+                            )}
+                          >
+                            {reportingStatusLabel(row.reporting_status)}
+                          </span>
                         </span>
                       </div>
                     </div>

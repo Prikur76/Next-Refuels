@@ -88,6 +88,8 @@ export function AccessClientPage() {
     queryKey: ["access", "users", showAllUsers],
     queryFn: () => getAccessUsers(showAllUsers),
     enabled: access.canManageAccess,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const eventsQuery = useQuery<AccessLogOut[], Error>({
@@ -443,16 +445,6 @@ export function AccessClientPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-sm font-semibold">Пользователи</h2>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
-              <button
-                type="button"
-                className="btn-app w-full sm:w-auto"
-                onClick={() => {
-                  setMsg("");
-                  usersQuery.refetch();
-                }}
-              >
-                Обновить список
-              </button>
               <label className="label-app m-0 w-full sm:w-auto">
                 Показ
                 <ResponsiveSelect

@@ -848,13 +848,15 @@ export default function AnalyticsPage() {
             <div className="toolbar order-1 w-full sm:order-2 sm:w-auto">
               <button
                 type="button"
-                className="btn-app w-full min-h-11 sm:w-auto sm:min-h-0"
+                className="btn-app w-full min-h-11 sm:w-auto sm:min-h-9 sm:!px-3 sm:!py-1.5 sm:text-sm"
                 aria-disabled={isExportingExcel}
                 onClick={() => void handleExportExcel()}
               >
                 <span className="inline-flex items-center gap-2">
                   <FileSpreadsheet size={14} aria-hidden="true" />
-                  <span>{isExportingExcel ? "XLSX..." : "Экспорт в Excel"}</span>
+                  <span>
+                    {isExportingExcel ? "XLSX..." : "Экспорт в Excel"}
+                  </span>
                 </span>
               </button>
             </div>

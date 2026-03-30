@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
   ChevronRight,
-  Download,
   FileSpreadsheet,
   PencilLine,
 } from "lucide-react";
@@ -91,6 +90,20 @@ function formatLocalDateTime(value: string): string {
   });
 }
 
+function reportingStatusLabel(status: string | undefined): string {
+  if (status === "EXCLUDED_DELETION") {
+    return "На удаление";
+  }
+  return "Учитывается";
+}
+
+function reportingStatusBadgeClass(status: string | undefined): string {
+  if (status === "EXCLUDED_DELETION") {
+    return "inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300";
+  }
+  return "inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300";
+}
+
 type SortKey =
   | "id"
   | "car_state_number"
@@ -99,6 +112,7 @@ type SortKey =
   | "source"
   | "employee_name"
   | "region_name"
+  | "reporting_status"
   | "filled_at";
 
 type SortDirection = "asc" | "desc";
@@ -195,7 +209,7 @@ const REPORTS_DATE_PRESETS: readonly {
   { id: "yesterday", label: "Вчера" },
   { id: "last7", label: "7 дней" },
   { id: "last30", label: "30 дней" },
-  { id: "monthToDate", label: "Месяц" },
+  { id: "monthToDate", label: "Текущий месяц" },
 ] as const;
 
 function rangeForReportsPreset(
@@ -473,15 +487,14 @@ export function FuelReportsClientPage({
   const [employee, setEmployee] = useState<string>("");
   const [carStateNumber, setCarStateNumber] = useState<string>("");
   const [regionId, setRegionId] = useState<string>(sharedFilters?.regionId ?? "");
+  const [includeExcluded, setIncludeExcluded] = useState<boolean>(false);
   const [selectedPresetId, setSelectedPresetId] = useState<
     ReportsDatePresetId | ""
   >(sharedFilters?.presetId ?? "");
   const [limit, setLimit] = useState<number>(25);
   const [offset, setOffset] = useState<number>(0);
-  const [queryNonce, setQueryNonce] = useState<number>(0);
   const [sortKey, setSortKey] = useState<SortKey>("filled_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [isExportingCsv, setIsExportingCsv] = useState<boolean>(false);
   const [isExportingXlsx, setIsExportingXlsx] = useState<boolean>(false);
   const [exportFeedback, setExportFeedback] = useState<string>("");
 
@@ -532,12 +545,23 @@ export function FuelReportsClientPage({
       region_id: regionIdValue,
       offset,
       limit,
+      include_excluded: includeExcluded || undefined,
     }),
-    [carStateNumber, employee, fromDate, limit, offset, regionIdValue, source, toDate]
+    [
+      carStateNumber,
+      employee,
+      fromDate,
+      includeExcluded,
+      limit,
+      offset,
+      regionIdValue,
+      source,
+      toDate,
+    ]
   );
 
   const summaryQuery = useQuery<SummaryOut, Error>({
-    queryKey: ["reports", "summary", queryNonce, filters],
+    queryKey: ["reports", "summary", filters],
     queryFn: () =>
       getSummary({
         from_date: filters.from_date,
@@ -546,8 +570,8 @@ export function FuelReportsClientPage({
         employee: filters.employee,
         car_state_number: filters.car_state_number,
         region_id: filters.region_id,
+        include_excluded: filters.include_excluded,
       }),
-    enabled: queryNonce > 0,
   });
 
   const optionsQuery = useQuery<ReportsFiltersOut, Error>({
@@ -563,6 +587,7 @@ export function FuelReportsClientPage({
         from_date: dateOrUndefined(fromDate),
         to_date: dateOrUndefined(toDate),
         source: source || undefined,
+        include_excluded: includeExcluded || undefined,
       }),
   });
 
@@ -572,9 +597,8 @@ export function FuelReportsClientPage({
   });
 
   const recordsQuery = useQuery<RecordsPageOut, Error>({
-    queryKey: ["reports", "records", queryNonce, filters],
+    queryKey: ["reports", "records", filters],
     queryFn: () => getFuelRecords(filters),
-    enabled: queryNonce > 0,
   });
 
   const queryClient = useQueryClient();
@@ -587,7 +611,7 @@ export function FuelReportsClientPage({
     null,
   );
 
-  const exportUrl = (type: "csv" | "xlsx") => {
+  const exportUrl = (type: "xlsx") => {
     const params = new URLSearchParams();
     params.set("from_date", fromDate);
     params.set("to_date", toDate);
@@ -602,7 +626,7 @@ export function FuelReportsClientPage({
     return `/api/reports/export/${type}?${params.toString()}`;
   };
 
-  const exportFileName = (type: "csv" | "xlsx"): string => {
+  const exportFileName = (type: "xlsx"): string => {
     const parts = [fromDate, toDate];
     if (source) {
       parts.push(sourceLabel(source));
@@ -626,14 +650,9 @@ export function FuelReportsClientPage({
     return `fuel_reports_${suffix || "export"}.${type}`;
   };
 
-  async function handleExport(type: "csv" | "xlsx"): Promise<void> {
-    const isCsv = type === "csv";
+  async function handleExport(type: "xlsx"): Promise<void> {
     setExportFeedback("");
-    if (isCsv) {
-      setIsExportingCsv(true);
-    } else {
-      setIsExportingXlsx(true);
-    }
+    setIsExportingXlsx(true);
 
     try {
       const response = await fetch(exportUrl(type), {
@@ -658,11 +677,7 @@ export function FuelReportsClientPage({
         error instanceof Error ? error.message : "Не удалось скачать файл.";
       setExportFeedback(message);
     } finally {
-      if (isCsv) {
-        setIsExportingCsv(false);
-      } else {
-        setIsExportingXlsx(false);
-      }
+      setIsExportingXlsx(false);
     }
   }
 
@@ -777,9 +792,6 @@ export function FuelReportsClientPage({
                   const nextLimit = Number(v);
                   setLimit(nextLimit);
                   setOffset(0);
-                  if (queryNonce > 0) {
-                    setQueryNonce((n) => n + 1);
-                  }
                 }}
                 options={[
                   { value: "25", label: "25" },
@@ -788,6 +800,23 @@ export function FuelReportsClientPage({
                 ]}
               />
             </label>
+            {canEditJournal ? (
+              <label className="label-app">
+                Показывать исключённые
+                <ResponsiveSelect
+                  ariaLabel="Показывать исключённые"
+                  value={includeExcluded ? "true" : "false"}
+                  onChange={(v) => {
+                    setIncludeExcluded(v === "true");
+                    setOffset(0);
+                  }}
+                  options={[
+                    { value: "false", label: "Нет" },
+                    { value: "true", label: "Да" },
+                  ]}
+                />
+              </label>
+            ) : null}
           </div>
 
           <div className="mt-3">
@@ -824,44 +853,20 @@ export function FuelReportsClientPage({
 
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="order-2 text-xs text-[var(--muted)] sm:order-1">
-              Выберите фильтры и нажмите «Обновить».
+              Данные обновляются автоматически при изменении фильтров.
             </div>
             <div className="toolbar order-1 w-full sm:order-2 sm:w-auto">
               <button
                 type="button"
-                className="btn-app btn-primary w-full min-h-11 sm:w-auto sm:min-h-9 sm:!px-3 sm:!py-1.5 sm:text-sm"
-                onClick={() => {
-                  setOffset(0);
-                  setQueryNonce((n) => n + 1);
-                }}
-              >
-                Обновить
-              </button>
-
-              <button
-                type="button"
-                className="btn-app w-full min-h-11 sm:w-auto sm:min-h-9 sm:!px-3 sm:!py-1.5 sm:text-sm"
-                aria-disabled={isExportingCsv}
-                onClick={() => {
-                  handleExport("csv");
-                }}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <Download size={14} aria-hidden="true" />
-                  <span>{isExportingCsv ? "CSV..." : "CSV"}</span>
-                </span>
-              </button>
-              <button
-                type="button"
                 className="btn-app w-full min-h-11 sm:w-auto sm:min-h-9 sm:!px-3 sm:!py-1.5 sm:text-sm"
                 aria-disabled={isExportingXlsx}
-                onClick={() => {
-                  handleExport("xlsx");
-                }}
+                onClick={() => void handleExport("xlsx")}
               >
                 <span className="inline-flex items-center gap-2">
                   <FileSpreadsheet size={14} aria-hidden="true" />
-                  <span>{isExportingXlsx ? "XLSX..." : "XLSX"}</span>
+                  <span>
+                    {isExportingXlsx ? "XLSX..." : "Экспорт в Excel"}
+                  </span>
                 </span>
               </button>
             </div>
@@ -872,7 +877,7 @@ export function FuelReportsClientPage({
         </div>
 
         <div className="mt-4">
-          {queryNonce === 0 ? null : summaryQuery.isPending ? (
+          {summaryQuery.isPending ? (
             <div className="space-y-2">
               <SkeletonLine height={16} width={180} />
               <SkeletonLine height={16} width={140} />
@@ -910,11 +915,7 @@ export function FuelReportsClientPage({
         <div className="mt-4 card p-4">
           <div className="text-sm font-semibold">Журнал</div>
 
-          {queryNonce === 0 ? (
-            <div className="mt-3 muted-box text-sm text-[var(--muted)]">
-              Нажмите “Обновить”, чтобы загрузить данные.
-            </div>
-          ) : recordsQuery.isPending ? (
+          {recordsQuery.isPending ? (
             <div className="mt-3 space-y-2">
               {Array.from({ length: 8 }).map((_, idx) => (
                 <SkeletonLine key={idx} height={14} width="100%" />
@@ -926,6 +927,24 @@ export function FuelReportsClientPage({
                 <table className="table-app table-app--fuel-gap">
                   <thead>
                     <tr>
+                      <th>
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          onClick={() => {
+                            if (sortKey === "reporting_status") {
+                              setSortDirection((d) =>
+                                d === "asc" ? "desc" : "asc"
+                              );
+                              return;
+                            }
+                            setSortKey("reporting_status");
+                            setSortDirection("asc");
+                          }}
+                        >
+                          Статус
+                        </button>
+                      </th>
                       <th>
                         <button
                           type="button"
@@ -1052,6 +1071,7 @@ export function FuelReportsClientPage({
                           Регион
                         </button>
                       </th>
+                      <th>Подразделение</th>
                       <th>
                         <button
                           type="button"
@@ -1100,7 +1120,20 @@ export function FuelReportsClientPage({
                         </td>
                         <td>{sourceLabel(item.source)}</td>
                         <td>{item.employee_name}</td>
+                        <td>
+                          <span
+                            className={reportingStatusBadgeClass(
+                              item.reporting_status,
+                            )}
+                            title={item.reporting_status ?? "ACTIVE"}
+                          >
+                            {reportingStatusLabel(item.reporting_status)}
+                          </span>
+                        </td>
                         <td>{item.region_name || "—"}</td>
+                        <td className="max-w-[220px] truncate">
+                          {item.historical_department?.trim() ? item.historical_department : "—"}
+                        </td>
                         <td className="mono">
                           {formatLocalDateTime(item.filled_at)}
                         </td>
@@ -1195,9 +1228,33 @@ export function FuelReportsClientPage({
                         </span>
                       </div>
                       <div className="flex justify-between gap-3">
+                        <span className="shrink-0 text-[var(--muted)]">
+                          Статус
+                        </span>
+                        <span className="min-w-0 break-words text-right">
+                          <span
+                            className={reportingStatusBadgeClass(
+                              item.reporting_status,
+                            )}
+                          >
+                            {reportingStatusLabel(item.reporting_status)}
+                          </span>
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
                         <span className="shrink-0 text-[var(--muted)]">Регион</span>
                         <span className="min-w-0 break-words text-right">
                           {item.region_name || "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="shrink-0 text-[var(--muted)]">
+                          Подразделение
+                        </span>
+                        <span className="min-w-0 break-words text-right">
+                          {item.historical_department?.trim()
+                            ? item.historical_department
+                            : "—"}
                         </span>
                       </div>
                       {canEditJournal ? (
@@ -1256,7 +1313,6 @@ export function FuelReportsClientPage({
                 );
                 const safePage = Math.min(Math.max(1, page), pages);
                 setOffset((safePage - 1) * limit);
-                setQueryNonce((n) => n + 1);
               }}
             />
           ) : null}
@@ -1271,7 +1327,6 @@ export function FuelReportsClientPage({
       initial={journalEdit}
       onClose={() => setJournalEdit(null)}
       onSaved={() => {
-        setQueryNonce((n) => n + 1);
         void queryClient.invalidateQueries({ queryKey: ["reports"] });
       }}
       showReportingField={canEditJournal}

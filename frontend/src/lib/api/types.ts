@@ -56,8 +56,11 @@ export interface FuelRecordOut {
   filled_at: string;
   employee_name: string;
   region_name: string | null;
+  historical_department?: string;
   reporting_status?: FuelReportingStatus;
   notes?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface FuelRecordPatchIn {

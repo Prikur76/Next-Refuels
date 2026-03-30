@@ -8,8 +8,33 @@ import { useMeQuery } from "@/components/auth/useMe";
 function HomeTileIcon({
   kind,
 }: {
-  kind: "fuel" | "analytics" | "access" | "bot";
+  kind: "fuel" | "mine" | "analytics" | "access" | "bot";
 }) {
+  if (kind === "mine") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M9 5.75h7.25a2 2 0 0 1 2 2v10.5a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V7.75a2 2 0 0 1 2-2Z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M9.25 9.25h5.5M9.25 12h5.5M9.25 14.75h3.5"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+        <path
+          d="m7.25 7 .65-.8c.25-.3.63-.5 1.02-.5h.92"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+
   if (kind === "fuel") {
     return (
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -119,7 +144,7 @@ export default function HomePage() {
       label: string;
       hint: string;
       tone: "brand" | "violet" | "teal";
-      icon: "fuel" | "analytics" | "access" | "bot";
+      icon: "fuel" | "mine" | "analytics" | "access" | "bot";
       size: "regular" | "wide";
     }> = [
       {
@@ -132,6 +157,21 @@ export default function HomePage() {
         size: "wide",
       },
     ];
+
+    if (
+      (isFueler || isManager || isAdmin) &&
+      meQuery.data?.has_my_editable_fuel_records
+    ) {
+      items.push({
+        key: "fuel-mine",
+        href: "/fuel/mine",
+        label: "Мои заправки",
+        hint: "Правка за 24 часа",
+        tone: "brand",
+        icon: "mine",
+        size: "regular",
+      });
+    }
 
     if (isManager || isAdmin) {
       items.push({
@@ -170,7 +210,11 @@ export default function HomePage() {
     }
 
     return items;
-  }, [meQuery.data?.groups, meQuery.data?.telegram_linked]);
+  }, [
+    meQuery.data?.groups,
+    meQuery.data?.has_my_editable_fuel_records,
+    meQuery.data?.telegram_linked,
+  ]);
 
   return (
     <div className="page-wrap">

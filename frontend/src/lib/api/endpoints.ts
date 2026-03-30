@@ -97,6 +97,7 @@ export async function getSummary(filters: {
   car_id?: number;
   car_state_number?: string;
   source?: string;
+  include_excluded?: boolean;
 }): Promise<SummaryOut> {
   const params = new URLSearchParams();
   if (filters.from_date) params.set("from_date", filters.from_date);
@@ -109,6 +110,7 @@ export async function getSummary(filters: {
     params.set("car_state_number", filters.car_state_number);
   }
   if (filters.source) params.set("source", filters.source);
+  if (filters.include_excluded) params.set("include_excluded", "true");
 
   return apiFetchJson<SummaryOut>(
     `/api/v1/reports/summary?${params.toString()}`
@@ -119,11 +121,13 @@ export async function getReportFilters(filters: {
   from_date?: string;
   to_date?: string;
   source?: string;
+  include_excluded?: boolean;
 }): Promise<ReportsFiltersOut> {
   const params = new URLSearchParams();
   if (filters.from_date) params.set("from_date", filters.from_date);
   if (filters.to_date) params.set("to_date", filters.to_date);
   if (filters.source) params.set("source", filters.source);
+  if (filters.include_excluded) params.set("include_excluded", "true");
 
   return apiFetchJson<ReportsFiltersOut>(
     `/api/v1/reports/filters?${params.toString()}`
@@ -142,6 +146,7 @@ export async function getFuelRecords(filters: {
   cursor?: string;
   offset?: number;
   limit?: number;
+  include_excluded?: boolean;
 }): Promise<RecordsPageOut> {
   const params = new URLSearchParams();
   if (filters.from_date) params.set("from_date", filters.from_date);
@@ -157,6 +162,7 @@ export async function getFuelRecords(filters: {
   if (filters.cursor) params.set("cursor", filters.cursor);
   params.set("offset", String(filters.offset ?? 0));
   params.set("limit", String(filters.limit ?? 50));
+  if (filters.include_excluded) params.set("include_excluded", "true");
 
   return apiFetchJson<RecordsPageOut>(
     `/api/v1/reports/records?${params.toString()}`

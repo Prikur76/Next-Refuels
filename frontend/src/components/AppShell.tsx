@@ -28,6 +28,8 @@ type NavItem = {
   key: string;
   href: string;
   label: string;
+  /** Короткая подпись для нижней панели (узкие ячейки). Полный текст — в label (aria). */
+  tabbarLabel?: string;
   icon: React.ReactNode;
   external?: boolean;
 };
@@ -195,13 +197,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       });
 
       if (
-        access.isFueler &&
+        (access.isFueler ||
+          access.isManager ||
+          access.isAdmin) &&
         meQuery.data?.has_my_editable_fuel_records
       ) {
         items.push({
           key: "my-fuel",
           href: "/fuel/mine",
           label: "Мои заправки",
+          tabbarLabel: "Мои\nзаправки",
           icon: <ListChecks size={18} />,
         });
       }
@@ -241,6 +246,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       access.hasReportsAccess,
       access.isAdmin,
       access.isFueler,
+      access.isManager,
       access.shouldShowBotLink,
       djangoAdminUrl,
       meQuery.data?.has_my_editable_fuel_records,
@@ -456,11 +462,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <main className="content" aria-label="Основной контент">
         <div className="page-wrap">
-          <header className="card p-4">
-            <div className="text-sm font-bold">Next-Refuels</div>
-            <div className="mt-1 text-xs text-[var(--muted)]">
-              Ввод и отчеты по заправкам
-            </div>
+          <header className="card p-0 overflow-hidden">
+            {isMobile ? (
+              <ViewTransitionLink
+                href="/"
+                className="app-shell-main-brand-link block p-4 text-inherit no-underline outline-none transition-opacity active:opacity-[0.92] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--primary)_42%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-1)]"
+                aria-label="Перейти на главную"
+              >
+                <div className="text-sm font-bold">Next-Refuels</div>
+                <div className="mt-1 text-xs text-[var(--muted)]">
+                  Ввод и отчёты по заправкам
+                </div>
+              </ViewTransitionLink>
+            ) : (
+              <div className="p-4">
+                <div className="text-sm font-bold">Next-Refuels</div>
+                <div className="mt-1 text-xs text-[var(--muted)]">
+                  Ввод и отчёты по заправкам
+                </div>
+              </div>
+            )}
           </header>
 
           <div className="mt-4">
@@ -491,10 +512,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       ? "noopener noreferrer"
                       : "noreferrer"
                   }
+                  aria-label={item.label}
                   aria-current={isActive ? "page" : undefined}
                 >
                   {item.icon}
-                  <span className="text-xs">{item.label}</span>
+                  <span className="tabbar-item-text">
+                    {item.tabbarLabel ?? item.label}
+                  </span>
                 </a>
               );
             }
@@ -504,10 +528,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={item.key}
                 href={item.href}
                 className="tabbar-item no-select-tap"
+                aria-label={item.label}
                 aria-current={isActive ? "page" : undefined}
               >
                 {item.icon}
-                <span className="text-xs">{item.label}</span>
+                <span className="tabbar-item-text">
+                  {item.tabbarLabel ?? item.label}
+                </span>
               </ViewTransitionLink>
             );
           })}

@@ -491,11 +491,34 @@ select.input-app option {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  padding: 10px 8px 9px;
+  min-width: 0;
+  padding: 10px 4px 9px;
   border-radius: 12px;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
+}
+
+/* Подписи: центр, перенос без «лесенки»; узкие слоты (как «Мои заправки») */
+.tabbar-item-text {
+  display: block;
+  width: 100%;
+  max-width: 4.75rem;
+  margin: 0 auto;
+  font-size: 10.5px;
+  line-height: 1.2;
+  font-weight: 500;
+  text-align: center;
+  text-wrap: balance;
+  white-space: pre-line;
+  overflow-wrap: break-word;
+  hyphens: manual;
+  color: color-mix(in srgb, var(--text) 88%, var(--muted));
+}
+
+.tabbar-item[aria-current="page"] .tabbar-item-text {
+  color: color-mix(in srgb, var(--primary) 35%, var(--text));
+  font-weight: 600;
 }
 
 .tabbar-item svg {
@@ -671,6 +694,22 @@ html[data-theme="dark"] .fuel-card--suspicious {
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-1) 86%, var(--surface-2));
   padding: 12px;
+}
+
+.fuel-mine-hint {
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, var(--primary) 12%);
+  border-left-width: 3px;
+  border-left-color: color-mix(in srgb, var(--primary) 58%, var(--border));
+  background: color-mix(in srgb, var(--surface-1) 94%, var(--primary) 4%);
+  padding: 11px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--text) 68%, var(--muted) 32%);
+}
+
+.fuel-mine-hint p {
+  margin: 0;
 }
 
 .home-grid {
