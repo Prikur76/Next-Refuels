@@ -5,7 +5,7 @@ services:
     container_name: next_refuels_frontend_prod
     working_dir: /app/frontend
     environment:
-      NEXT_PUBLIC_API_URL: ""
+      NEXT_PUBLIC_API_URL: "https://${DOMAIN}"
       # Для SSR роутов Next.js (например, /api/reports/export/[type])
       # нужно явно ходить в Django по внутреннему адресу контейнера.
       NEXT_INTERNAL_API_URL: "http://web:8000"
@@ -52,6 +52,7 @@ services:
       gunicorn next_refuels.wsgi:application
       --bind 0.0.0.0:8000
       --workers 4
+      --timeout 120
       --log-level info
       --access-logfile /dev/null
       "
@@ -150,11 +151,16 @@ services:
     container_name: telegram_bot_prod
     env_file: .env
     environment:
+      # Увеличить таймаут инициализации
+      PYTHONUNBUFFERED: "1"  
       DJANGO_SETTINGS_MODULE: next_refuels.settings.prod
       DEBUG: "False"
       ALLOWED_HOSTS: ${DOMAIN},localhost,127.0.0.1,web
       CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
       FRONTEND_BASE_URL: https://${DOMAIN}
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     depends_on:
       web:
         condition: service_healthy

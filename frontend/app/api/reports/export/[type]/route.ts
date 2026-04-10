@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-type ExportType = "csv" | "xlsx";
+type ExportType = "xlsx";
 
 function isExportType(value: string): value is ExportType {
-  return value === "csv" || value === "xlsx";
+  return value === "xlsx";
 }
 
 function getBackendBaseUrl(): string {
@@ -33,6 +33,9 @@ export async function GET(
     method: "GET",
     headers: {
       cookie: request.headers.get("cookie") ?? "",
+      // ✅ Добавить заголовок, чтобы Django не редиректил
+      "X-Forwarded-Proto": "https",
+      "X-Forwarded-Host": "web",
     },
     redirect: "follow",
     cache: "no-store",

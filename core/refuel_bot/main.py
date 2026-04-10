@@ -35,8 +35,8 @@ def build_app():
     request_kwargs = {
         "connect_timeout": 20.0,
         "read_timeout": 40.0,
-        "write_timeout": 20.0,
-        "pool_timeout": 5.0,
+        "write_timeout": 30.0,
+        "pool_timeout": 10.0,
     }
     if proxy_url:
         logger.info(f"Using proxy: {proxy_url}")
@@ -45,7 +45,7 @@ def build_app():
     # Явно задаем таймауты HTTP-клиента даже без прокси:
     # это снижает риск таймаута на первом getMe во время bootstrap.
     request = HTTPXRequest(**request_kwargs)
-    app = ApplicationBuilder().token(token).request(request).build()
+    app = ApplicationBuilder().token(token).request(request).get_me_request_timeout(30).build()
     app.add_handler(TypeHandler(Update, access_middleware), group=-1)
 
     # Команды/кнопки
