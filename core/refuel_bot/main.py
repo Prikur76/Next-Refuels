@@ -45,7 +45,7 @@ def build_app():
     # Явно задаем таймауты HTTP-клиента даже без прокси:
     # это снижает риск таймаута на первом getMe во время bootstrap.
     request = HTTPXRequest(**request_kwargs)
-    app = ApplicationBuilder().token(token).request(request).get_me_request_timeout(30).build()
+    app = ApplicationBuilder().token(token).request(request).build()
     app.add_handler(TypeHandler(Update, access_middleware), group=-1)
 
     # Команды/кнопки
