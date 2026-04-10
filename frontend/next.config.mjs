@@ -9,6 +9,8 @@ const nextConfig = {
   reactStrictMode: true,
   skipTrailingSlashRedirect: true,
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  
+  // ✅ Webpack-конфиг
   webpack: (config, { dev, isServer }) => {
     if (dev && !isServer && process.env.WATCHPACK_POLLING) {
       const interval = Number(process.env.WATCHPACK_POLLING) || 1000;
@@ -18,12 +20,14 @@ const nextConfig = {
       };
     }
     return config;
-  },
+  }, 
+
+  // ✅ Turbopack-конфиг
+  turbopack: {},
+  
+  // ✅ Rewrites 
   async rewrites() {
-    // Dev convenience: proxy frontend -> Django to avoid CORS locally.
     return [
-      // Keep backward compatibility for old frontend bundles:
-      // route legacy export URLs through the local Next proxy endpoint.
       {
         source: "/api/v1/reports/export/csv",
         destination: "/api/reports/export/csv",
@@ -57,4 +61,3 @@ const nextConfig = {
 };
 
 export default nextConfig;
-
