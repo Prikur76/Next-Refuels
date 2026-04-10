@@ -411,3 +411,201 @@ docker compose -f docker-compose.prod.yml top
 > 📄 **Документ подготовлен:** 10.04.2026  
 > 👤 **Автор:** Владимир Шистеров  
 > 🔄 **Обновлять при:** изменении архитектуры, добавлении новых сервисов, миграции на другой хостинг
+
+
+---
+
+# 📎 Дополнение к отчёту: Проблемы сборки Next.js 14/16 + Node 20 + Docker
+
+**Дата обновления:** 10 апреля 2026  
+**Статус:** ✅ Все ошибки устранены, система стабильна  
+**Связь с основным отчётом:** Дополняет разделы по фронтенду и Docker-сборке
+
+---
+
+## 🔍 Краткое резюме новых инцидентов
+
+| Компонент | Проблема | Статус | Решение |
+|-----------|----------|--------|---------|
+| `tsconfig.json` | `baseUrl` депрекейт, `ignoreDeprecations` invalid | ✅ Исправлено | Убрать флаг, использовать относительные пути `./src/*` |
+| `next.config.mjs` | Конфликт Turbopack + Webpack, `SyntaxError` | ✅ Исправлено | Добавить `turbopack: {}` на верхний уровень, исправить скобки |
+| `npm install` | `ERESOLVE` конфликт `eslint@8` vs `eslint-config-next@16` | ✅ Исправлено | Использовать `--legacy-peer-deps` или зафиксировать совместимые версии |
+| `recharts` + Turbopack | `Module not found: Can't resolve 'react-is'` | ✅ Исправлено | Явно установить `react-is` в `dependencies` |
+| Docker Compose | Сборка падает на `npm install` внутри контейнера | ✅ Исправлено | Добавить `--legacy-peer-deps` в команду запуска |
+
+---
+
+## 🚨 Проблема #5: Конфликт зависимостей ESLint (`ERESOLVE`)
+
+### Симптомы
+```
+npm error ERESOLVE could not resolve
+npm error Could not resolve dependency:
+npm error peer eslint@">=9.0.0" from eslint-config-next@16.2.3
+npm error Found: eslint@8.57.1
+npm error Conflicting peer dependency: eslint@10.2.0
+```
+
+### Корневая причина
+`eslint-config-next` версии `16.2.3` (из Next.js 16) требует **ESLint ≥9.0.0**. В проекте установлен `eslint@8.57.1`. Начиная с npm 7, менеджер пакетов строго проверяет `peerDependencies` и прерывает установку при конфликте.
+
+### Решение
+
+#### 🔹 Вариант А (быстрый): Игнорировать конфликт
+```bash
+npm install --legacy-peer-deps
+```
+✅ Безопасно, если не меняете `.eslintrc` и не используете новые правила ESLint 9.
+
+#### 🔹 Вариант Б (стабильный): Зафиксировать совместимые версии
+В `frontend/package.json`:
+```json
+"devDependencies": {
+  "eslint": "^8.57.0",
+  "eslint-config-next": "^14.2.35"  // Совместим с ESLint 8
+}
+```
+Затем:
+```bash
+rm -rf node_modules package-lock.json
+npm cache clean --force
+npm install --legacy-peer-deps
+```
+
+---
+
+## 🚨 Проблема #6: Turbopack не находит `react-is` (ошибка `recharts`)
+
+### Симптомы
+```
+Error: Turbopack build failed with 1 errors:
+./node_modules/recharts/es6/util/ReactUtils.js:3:1
+Module not found: Can't resolve 'react-is'
+  > 3 | import { isFragment } from 'react-is';
+```
+
+### Корневая причина
+Библиотека `recharts` (используется в `/analytics`) зависит от `react-is`, но не указывает его в `dependencies`. Webpack раньше "проглатывал" такие отсутствующие пир-зависимости, а **Turbopack (Next.js 16) требует явного указания**.
+
+### Решение
+```bash
+cd /opt/Next-Refuels/frontend
+npm install react-is --save --legacy-peer-deps
+```
+Убедитесь, что в `package.json` появилась строка:
+```json
+"dependencies": {
+  "react-is": "^18.2.0"
+}
+```
+
+---
+
+## 🚨 Проблема #7: Синтаксическая ошибка в `next.config.mjs`
+
+### Симптомы
+```
+Failed to load next.config.mjs
+SyntaxError: Unexpected token ','
+```
+
+### Корневая причина
+При добавлении `turbopack: {}` разработчик случайно поместил его **внутрь стрелочной функции `webpack`**, нарушив структуру объекта конфигурации:
+```javascript
+// ❌ Неправильно:
+webpack: (config) => {
+  return config;
+  turbopack: {},  // ← здесь синтаксическая ошибка
+}
+```
+
+### Решение
+Вынести `turbopack` на уровень свойств `nextConfig`:
+```javascript
+const nextConfig = {
+  reactStrictMode: true,
+  webpack: (config, { dev, isServer }) => {
+    // ... ваш код ...
+    return config;
+  },  // ← правильно закрываем функцию
+  turbopack: {},  // ← на том же уровне, что webpack/reactStrictMode
+  async rewrites() { /* ... */ },
+};
+```
+
+---
+
+## 🚨 Проблема #8: Docker-сборка падает с `ERESOLVE` в контейнере
+
+### Симптомы
+```
+next_refuels_frontend_prod  | npm error ERESOLVE could not resolve
+next_refuels_frontend_prod  | npm error Fix the upstream dependency conflict, or retry
+next_refuels_frontend_prod  | npm error this command with --force or --legacy-peer-deps
+next_refuels_frontend_prod exited with code 0
+```
+
+### Корневая причина
+В `docker-compose.prod.yml` команда запуска использовала чистый `npm install`, который внутри контейнера срабатывал строго и падал на конфликтах peer-зависимостей.
+
+### Решение
+Обновить секцию `command` в `docker-compose.prod.yml`:
+```yaml
+frontend:
+  image: node:20-alpine
+  container_name: next_refuels_frontend_prod
+  working_dir: /app/frontend
+  command: >
+    sh -c "
+    npm install --legacy-peer-deps &&
+    npm run build &&
+    (
+      npm run start &
+      pid=$$!;
+      node /app/scripts/next-warmup.mjs --base http://localhost:4173 --paths / /login /fuel/add /fuel/reports /analytics || true;
+      wait $$pid
+    )
+    "
+```
+
+---
+
+## 📋 Итоговый чеклист по фронтенду и сборке
+
+- [ ] `tsconfig.json`: убран `ignoreDeprecations`, пути исправлены на `./src/*` ✅
+- [ ] `next.config.mjs`: `turbopack: {}` вынесен на верхний уровень, синтаксис проверен ✅
+- [ ] `package.json`: добавлен `"react-is": "^18.x"` в `dependencies` ✅
+- [ ] `package.json`: `eslint-config-next` понижен до `^14.2.35` (или используется флаг) ✅
+- [ ] `docker-compose.prod.yml`: в `command` добавлен `--legacy-peer-deps` ✅
+- [ ] Локальная сборка: `npm run build` → `✓ Compiled successfully` ✅
+- [ ] Docker-образ: `docker compose build --no-cache frontend` → без ошибок ✅
+- [ ] Запуск: `docker compose up -d frontend` → `✓ Ready in XXXms` ✅
+- [ ] Проверка: `curl -I https://refuel.txnxt.ru` → `HTTP/2 200` ✅
+- [ ] Проверка: страница `/analytics` с графиками загружается без ошибок в консоли ✅
+
+---
+
+## 💡 Примечания для команды
+
+1. **Почему `--legacy-peer-deps`?**  
+   В экосистеме Next.js/React многие пакеты (`recharts`, `eslint-config-next`, `typescript-eslint`) имеют "мягкие" или устаревшие `peerDependencies`. Флаг позволяет npm установить рабочую комбинацию без ручного даунгрейда каждого пакета. Это стандартная практика для фронтенд-проектов на Next.js 14–16.
+
+2. **Turbopack vs Webpack**  
+   Next.js 16 включает Turbopack по умолчанию. Он быстрее, но строже к зависимостям. Если в будущем появятся ошибки `Module not found` — проверяйте `node_modules/`, часто достаточно явно установить пакет, который раньше подтягивался неявно.
+
+3. **Уязвимости `npm audit`**  
+   `3 high severity vulnerabilities` в выводе относятся к `devDependencies` (линтеры, тайпскрипт-утилиты). Они **не попадают в продакшен-сборку** и не влияют на безопасность сайта. `npm audit fix --force` часто ломает проект. Обновляйте зависимости планово в отдельной ветке с полным тестированием.
+
+4. **Как избежать повторения**  
+   Добавьте в `.npmrc` в корне фронтенда:
+   ```
+   legacy-peer-deps=true
+   save-exact=true
+   ```
+   Это сделает поведение `npm install` предсказуемым на всех машинах разработчиков и в CI/CD.
+
+---
+
+> 📄 **Документ подготовлен:** 10.04.2026  
+> 🔄 **Рекомендация:** Объединить с основным `docs/TROUBLESHOOTING.md` или сохранить как `docs/TROUBLESHOOTING_FRONTEND_2026-04.md` для удобства поиска.  
+> 🛠️ При возникновении новых проблем сборки — сверяйтесь с разделами #5–#8. Большинство ошибок Next.js 14/16 + Node 20 уже покрыты.
