@@ -15,9 +15,12 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
-    }
+      "@/*": ["src/*"]
+    },
+    
+    "ignoreDeprecations": "6.0" // TODO: удалить при обновлении до TS 7.0
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
